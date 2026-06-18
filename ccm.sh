@@ -167,6 +167,9 @@ STEPFUN_API_KEY=your-stepfun-api-key
 # Qwen（阿里云 DashScope）
 QWEN_API_KEY=your-qwen-api-key
 
+# Bailian 百炼 Token Plan（独立 endpoint）
+BAILIAN_API_KEY=your-bailian-api-key
+
 # Claude (如果使用API key而非Pro订阅)
 CLAUDE_API_KEY=your-claude-api-key
 
@@ -185,6 +188,7 @@ HAIKU_MODEL=claude-haiku-4-5-20251001
 MINIMAX_MODEL=MiniMax-M2.5
 SEED_MODEL=ark-code-latest
 STEPFUN_MODEL=step-3.5-flash
+BAILIAN_MODEL=qwen3.7-plus
 
 EOF
         echo -e "${YELLOW}⚠️  $(t 'config_created'): $CONFIG_FILE${NC}" >&2
@@ -277,6 +281,9 @@ STEPFUN_API_KEY=your-stepfun-api-key
 # Qwen（阿里云 DashScope）
 QWEN_API_KEY=your-qwen-api-key
 
+# Bailian 百炼 Token Plan（独立 endpoint）
+BAILIAN_API_KEY=your-bailian-api-key
+
 # Claude (如果使用API key而非Pro订阅)
 CLAUDE_API_KEY=your-claude-api-key
 
@@ -295,6 +302,7 @@ HAIKU_MODEL=claude-haiku-4-5-20251001
 MINIMAX_MODEL=MiniMax-M2.5
 SEED_MODEL=ark-code-latest
 STEPFUN_MODEL=step-3.5-flash
+BAILIAN_MODEL=qwen3.7-plus
 
 EOF
     echo -e "${YELLOW}⚠️  $(t 'config_created'): $CONFIG_FILE${NC}" >&2
@@ -661,6 +669,15 @@ get_provider_config() {
             config_token_var="STEPFUN_API_KEY"
             config_model="${STEPFUN_MODEL:-step-3.5-flash}"
             config_base_url="https://api.stepfun.ai/v1/anthropic"
+            ;;
+        "bailian")
+            if ! is_effectively_set "$BAILIAN_API_KEY"; then
+                echo -e "${RED}❌ Please configure BAILIAN_API_KEY first${NC}" >&2
+                return 1
+            fi
+            config_token_var="BAILIAN_API_KEY"
+            config_model="${BAILIAN_MODEL:-qwen3.7-plus}"
+            config_base_url="https://token-plan.cn-beijing.maas.aliyuncs.com/apps/anthropic"
             ;;
         "claude"|"sonnet"|"s")
             config_token_var=""  # Uses Claude Pro subscription
@@ -2259,6 +2276,20 @@ emit_env_exports() {
             emit_default_models "$stepfun_model" "$stepfun_model" "$stepfun_model"
             emit_subagent_model "$stepfun_model"
             ;;
+        "bailian")
+            if ! is_effectively_set "$BAILIAN_API_KEY"; then
+                echo -e "${RED}❌ Please configure BAILIAN_API_KEY${NC}" >&2
+                return 1
+            fi
+            local bailian_model="${BAILIAN_MODEL:-qwen3.7-plus}"
+            echo "$prelude"
+            echo "export ANTHROPIC_BASE_URL='https://token-plan.cn-beijing.maas.aliyuncs.com/apps/anthropic'"
+            echo "if [ -f \"\$HOME/.ccm_config\" ]; then . \"\$HOME/.ccm_config\" >/dev/null 2>&1; fi"
+            echo "export ANTHROPIC_AUTH_TOKEN=\"\${BAILIAN_API_KEY}\""
+            echo "export ANTHROPIC_MODEL='${bailian_model}'"
+            emit_default_models "$bailian_model" "$bailian_model" "$bailian_model"
+            emit_subagent_model "$bailian_model"
+            ;;
         "claude"|"sonnet"|"s")
             echo "$prelude"
             # 官方 Anthropic 网关
@@ -2358,6 +2389,9 @@ main() {
             ;;
         "stepfun")
             emit_env_exports stepfun
+            ;;
+        "bailian")
+            emit_env_exports bailian
             ;;
         "claude"|"sonnet"|"s")
             emit_env_exports claude
