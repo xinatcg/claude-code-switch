@@ -718,9 +718,106 @@ get_provider_config() {
     echo "${config_base_url}|${config_model}|${config_token_var}"
 }
 
+# GLM 用户级写入：消费唯一数据源写 ~/.claude/settings.json。
+# force=0 且全局文件非 ccmManaged 时拦下（兼容 cc-switch-cli 独占全局）。
+user_write_glm_settings() {
+    local region="${1:-global}"
+    local force="${2:-0}"
+    local normalized
+    if ! normalized="$(normalize_region "$region")"; then
+        echo -e "${RED}❌ Invalid region: $region${NC}" >&2
+        echo -e "${YELLOW}💡 Usage: ccm user glm [global|china] [--force]${NC}" >&2
+        return 1
+    fi
+    region="$normalized"
+
+    if ! is_effectively_set "$GLM_API_KEY"; then
+        echo -e "${RED}❌ Please configure GLM_API_KEY${NC}" >&2
+        return 1
+    fi
+
+    local settings_path; settings_path="$(user_settings_path)"
+    local settings_dir; settings_dir="$(dirname "$settings_path")"
+
+    # cc-switch-cli 兼容：全局文件存在且非 ccm 管理时拦截
+    if [[ -f "$settings_path" ]] \
+       && ! grep -q '"ccmManaged"[[:space:]]*:[[:space:]]*true' "$settings_path" 2>/dev/null; then
+        if [[ "$force" != "1" ]]; then
+            echo -e "${YELLOW}⚠️  ~/.claude/settings.json 已由外部工具管理（可能是 cc-switch-cli）。${NC}" >&2
+            echo -e "${YELLOW}   建议改用 'ccm project glm' 仅作用于当前项目，全局交给 cc-switch-cli。${NC}" >&2
+            echo -e "${YELLOW}   如确需 ccm 接管全局，请加 --force 重试（会先备份原文件）。${NC}" >&2
+            return 1
+        fi
+        backup_user_settings "$settings_path"
+    fi
+
+    mkdir -p "$settings_dir"
+
+    local env_block; env_block="$(get_glm_env_map "$region")"
+    env_block="${env_block//\$\{GLM_API_KEY\}/$GLM_API_KEY}"
+
+    if command -v python3 >/dev/null 2>&1; then
+        # 用 python 把 env_block 编为 JSON，经环境变量传入，规避 heredoc 引号转义
+        export _CCM_GLM_ENV_JSON _CCM_GLM_SETTINGS_PATH _CCM_GLM_REGION
+        _CCM_GLM_ENV_JSON="$(printf '%s\n' "$env_block" | python3 -c 'import sys,json; print(json.dumps(dict(l.split("=",1) for l in sys.stdin.read().splitlines() if "=" in l)))')"
+        _CCM_GLM_SETTINGS_PATH="$settings_path"
+        _CCM_GLM_REGION="$region"
+        python3 << 'PYTHON_EOF'
+import json, os
+p = os.environ['_CCM_GLM_SETTINGS_PATH']
+existing = {}
+if os.path.exists(p):
+    try:
+        with open(p) as f:
+            existing = json.load(f)
+    except Exception:
+        existing = {}
+existing['ccmManaged'] = True
+existing['ccmProvider'] = 'glm'
+existing['ccmRegion'] = os.environ['_CCM_GLM_REGION']
+existing['env'] = json.loads(os.environ['_CCM_GLM_ENV_JSON'])
+with open(p, 'w') as f:
+    json.dump(existing, f, indent=2)
+os.chmod(p, 0o600)
+PYTHON_EOF
+        unset _CCM_GLM_ENV_JSON _CCM_GLM_SETTINGS_PATH _CCM_GLM_REGION
+    else
+        # 回退：纯 heredoc 重写（会丢失既有非 env 字段）
+        local json_lines=""
+        while IFS='=' read -r k v; do
+            [[ -z "$k" ]] && continue
+            json_lines+="    \"${k}\": \"${v}\""'\n'
+        done <<< "$env_block"
+        json_lines="$(printf '%b' "$json_lines" | sed '/^$/d; $!{s/$/,/}')"
+        cat > "$settings_path" <<EOF
+{
+  "ccmManaged": true,
+  "ccmProvider": "glm",
+  "ccmRegion": "${region}",
+  "env": {
+${json_lines}
+  }
+}
+EOF
+        chmod 600 "$settings_path"
+    fi
+
+    echo -e "${GREEN}✅ Wrote user-level settings for GLM (${region})${NC}" >&2
+    echo -e "${BLUE}   File: $settings_path${NC}" >&2
+    echo -e "${YELLOW}💡 全局配置建议由 cc-switch-cli 管理；项目级请用 'ccm project glm'。${NC}" >&2
+}
+
 user_write_settings() {
     local provider="$1"
     local region="${2:-global}"
+
+    # GLM 走专属数据源 + cc-switch-cli 兼容检测
+    if [[ "$provider" == "glm" || "$provider" == "glm5" ]]; then
+        local _user_force="0"
+        [[ "${3:-}" == "--force" ]] && _user_force="1"
+        user_write_glm_settings "$region" "$_user_force"
+        return $?
+    fi
 
     # Normalize region if needed
     if [[ "$provider" =~ ^(glm|kimi|qwen|minimax)$ ]]; then
@@ -877,8 +974,12 @@ user_show_usage() {
     echo -e "${BLUE}User-level settings (writes to ~/.claude/settings.json)${NC}" >&2
     echo "" >&2
     echo "Usage:" >&2
-    echo "  ccm user <provider> [region]   - Write provider settings to user-level" >&2
-    echo "  ccm user reset                  - Remove ccm settings, restore env var control" >&2
+    echo "  ccm user <provider> [region] [--force]   - Write provider settings to user-level" >&2
+    echo "  ccm user reset                            - Remove ccm settings, restore env var control" >&2
+    echo "" >&2
+    echo "Note: 若 ~/.claude/settings.json 已由 cc-switch-cli 等外部工具管理，" >&2
+    echo "      默认会拦下；加 --force 覆盖（会先备份）。建议全局交给 cc-switch-cli，" >&2
+    echo "      项目级用 'ccm project <provider>'。" >&2
     echo "" >&2
     echo "Providers:" >&2
     echo "  glm [global|china]    - GLM" >&2
@@ -890,7 +991,8 @@ user_show_usage() {
     echo "  claude                - Claude (official)" >&2
     echo "" >&2
     echo "Examples:" >&2
-    echo "  ccm user glm global   # Use GLM globally" >&2
+    echo "  ccm user glm global          # Use GLM globally (会被 cc-switch-cli 检测拦下)" >&2
+    echo "  ccm user glm china --force   # 强制覆盖全局（先备份）" >&2
     echo "  ccm user deepseek     # Use DeepSeek globally" >&2
     echo "  ccm user reset        # Remove, use env vars instead" >&2
 }
@@ -2472,7 +2574,14 @@ main() {
             local user_action="${1:-}"
             case "$user_action" in
                 "glm"|"deepseek"|"ds"|"kimi"|"kimi2"|"qwen"|"minimax"|"mm"|"seed"|"doubao"|"stepfun"|"claude"|"sonnet"|"s")
-                    user_write_settings "$user_action" "${2:-}"
+                    # --force 可出现在任意位置，剥离后剩余首个非 provider 词作为 region
+                    local _ua_force="" _ua_region=""
+                    for _a in "$@"; do
+                        [[ "$_a" == "--force" ]] && { _ua_force="--force"; continue; }
+                        [[ "$_a" == "$user_action" ]] && continue
+                        [[ -z "$_ua_region" ]] && _ua_region="$_a"
+                    done
+                    user_write_settings "$user_action" "$_ua_region" "$_ua_force"
                     ;;
                 "reset")
                     user_reset_settings
