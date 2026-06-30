@@ -455,7 +455,7 @@ project_write_glm_settings() {
     local env_block; env_block="$(get_glm_env_map "$region")"
     env_block="${env_block//\$\{GLM_API_KEY\}/$GLM_API_KEY}"
 
-    # 组装 JSON env 行（key/value 均为安全字符，无需转义）
+    # 组装 JSON env 行（GLM_API_KEY 期望为 ASCII 安全字符；若含 `"` 或 `\` 会破坏此 bash 组装的 JSON（python3 路径无此问题））
     local json_lines=""
     while IFS='=' read -r k v; do
         [[ -z "$k" ]] && continue
@@ -719,10 +719,9 @@ get_provider_config() {
 }
 
 # GLM 用户级写入：消费唯一数据源写 ~/.claude/settings.json。
-# force=0 且全局文件非 ccmManaged 时拦下（兼容 cc-switch-cli 独占全局）。
+# cc-switch-cli 兼容检测（ccmManaged guard）由通用入口 user_write_settings 统一完成。
 user_write_glm_settings() {
     local region="${1:-global}"
-    local force="${2:-0}"
     local normalized
     if ! normalized="$(normalize_region "$region")"; then
         echo -e "${RED}❌ Invalid region: $region${NC}" >&2
@@ -738,18 +737,6 @@ user_write_glm_settings() {
 
     local settings_path; settings_path="$(user_settings_path)"
     local settings_dir; settings_dir="$(dirname "$settings_path")"
-
-    # cc-switch-cli 兼容：全局文件存在且非 ccm 管理时拦截
-    if [[ -f "$settings_path" ]] \
-       && ! grep -q '"ccmManaged"[[:space:]]*:[[:space:]]*true' "$settings_path" 2>/dev/null; then
-        if [[ "$force" != "1" ]]; then
-            echo -e "${YELLOW}⚠️  ~/.claude/settings.json 已由外部工具管理（可能是 cc-switch-cli）。${NC}" >&2
-            echo -e "${YELLOW}   建议改用 'ccm project glm' 仅作用于当前项目，全局交给 cc-switch-cli。${NC}" >&2
-            echo -e "${YELLOW}   如确需 ccm 接管全局，请加 --force 重试（会先备份原文件）。${NC}" >&2
-            return 1
-        fi
-        backup_user_settings "$settings_path"
-    fi
 
     mkdir -p "$settings_dir"
 
@@ -811,11 +798,26 @@ user_write_settings() {
     local provider="$1"
     local region="${2:-global}"
 
-    # GLM 走专属数据源 + cc-switch-cli 兼容检测
+    # 通用 guard：cc-switch-cli 兼容检测（对所有 provider 生效，含 GLM）
+    # 全局 settings.json 存在且非 ccmManaged 时，默认拦下；--force 先备份再接管。
+    local force="0"
+    [[ "${3:-}" == "--force" ]] && force="1"
+    local _guard_settings_path
+    _guard_settings_path="$(user_settings_path)"
+    if [[ -f "$_guard_settings_path" ]] \
+       && ! grep -q '"ccmManaged"[[:space:]]*:[[:space:]]*true' "$_guard_settings_path" 2>/dev/null; then
+        if [[ "$force" != "1" ]]; then
+            echo -e "${YELLOW}⚠️  ~/.claude/settings.json 已由外部工具管理（可能是 cc-switch-cli）。${NC}" >&2
+            echo -e "${YELLOW}   建议改用 'ccm project ${provider}' 仅作用于当前项目，全局交给 cc-switch-cli。${NC}" >&2
+            echo -e "${YELLOW}   如确需 ccm 接管全局，请加 --force 重试（会先备份原文件）。${NC}" >&2
+            return 1
+        fi
+        backup_user_settings "$_guard_settings_path"
+    fi
+
+    # GLM 走专属数据源（通用 guard 已在上游完成 cc-switch-cli 兼容检测）
     if [[ "$provider" == "glm" || "$provider" == "glm5" ]]; then
-        local _user_force="0"
-        [[ "${3:-}" == "--force" ]] && _user_force="1"
-        user_write_glm_settings "$region" "$_user_force"
+        user_write_glm_settings "$region"
         return $?
     fi
 
@@ -848,12 +850,7 @@ user_write_settings() {
     local settings_dir
     settings_dir="$(dirname "$settings_path")"
 
-    # Backup existing settings if not ccm-managed
-    if [[ -f "$settings_path" ]]; then
-        if ! grep -q '"ccmManaged"[[:space:]]*:[[:space:]]*true' "$settings_path" 2>/dev/null; then
-            backup_user_settings "$settings_path"
-        fi
-    fi
+    # Backup existing settings if not ccm-managed（通用 guard 已在 force 路径完成备份）
 
     mkdir -p "$settings_dir"
 
@@ -2553,7 +2550,7 @@ main() {
             shift
             local project_action="${1:-}"
             case "$project_action" in
-                "glm"|"deepseek"|"ds"|"kimi"|"kimi2"|"qwen"|"minimax"|"mm"|"seed"|"doubao"|"claude"|"sonnet"|"s")
+                "glm"|"glm5"|"deepseek"|"ds"|"kimi"|"kimi2"|"qwen"|"minimax"|"mm"|"seed"|"doubao"|"claude"|"sonnet"|"s")
                     project_write_settings "$project_action" "${2:-}"
                     ;;
                 "reset")
@@ -2573,9 +2570,10 @@ main() {
             shift
             local user_action="${1:-}"
             case "$user_action" in
-                "glm"|"deepseek"|"ds"|"kimi"|"kimi2"|"qwen"|"minimax"|"mm"|"seed"|"doubao"|"stepfun"|"claude"|"sonnet"|"s")
+                "glm"|"glm5"|"deepseek"|"ds"|"kimi"|"kimi2"|"qwen"|"minimax"|"mm"|"seed"|"doubao"|"stepfun"|"claude"|"sonnet"|"s")
                     # --force 可出现在任意位置，剥离后剩余首个非 provider 词作为 region
                     local _ua_force="" _ua_region=""
+                    local _a
                     for _a in "$@"; do
                         [[ "$_a" == "--force" ]] && { _ua_force="--force"; continue; }
                         [[ "$_a" == "$user_action" ]] && continue
