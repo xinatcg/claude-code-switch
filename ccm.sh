@@ -5,8 +5,11 @@
 # 功能: 在不同AI模型之间快速切换
 # 支持: Claude, Deepseek, GLM4.7, KIMI2
 # 作者: Peng
-# 版本: 2.3.0
+# 版本: 2.3.0（由 release-please 维护；勿手改，见 CCM_VERSION）
 ############################################################
+
+# 工具版本号（release-please 自动 bump，extra-files 更新此值）
+CCM_VERSION="2.3.0"
 
 # 脚本颜色定义
 RED='\033[0;31m'
@@ -1777,7 +1780,7 @@ switch_to_seed() {
 
 # 显示帮助信息
 show_help() {
-    echo -e "${BLUE}🔧 $(t 'switching_info') v2.3.0${NC}"
+    echo -e "${BLUE}🔧 $(t 'switching_info') v${CCM_VERSION}${NC}"
     echo ""
     echo -e "${YELLOW}$(t 'usage'):${NC} $(basename "$0") [options]"
     echo ""
@@ -2469,6 +2472,9 @@ main() {
                     return 1
                     ;;
             esac
+            ;;
+        "version"|"--version"|"v")
+            echo "${CCM_VERSION}"
             ;;
         "status"|"st")
             show_status
