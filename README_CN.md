@@ -1,8 +1,8 @@
 # Claude Code Switch (ccm)
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![GitHub stars](https://img.shields.io/github/stars/foreveryh/claude-code-switch.svg)](https://github.com/foreveryh/claude-code-switch/stargazers)
-[![GitHub issues](https://img.shields.io/github/issues/foreveryh/claude-code-switch.svg)](https://github.com/foreveryh/claude-code-switch/issues)
+[![GitHub stars](https://img.shields.io/github/stars/xinatcg/claude-code-switch.svg)](https://github.com/xinatcg/claude-code-switch/stargazers)
+[![GitHub issues](https://img.shields.io/github/issues/xinatcg/claude-code-switch.svg)](https://github.com/xinatcg/claude-code-switch/issues)
 
 一条命令切换 Claude Code 的 AI 提供商。
 
@@ -12,7 +12,7 @@
 
 ```bash
 # 1. 安装
-curl -fsSL https://raw.githubusercontent.com/foreveryh/claude-code-switch/main/quick-install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/xinatcg/claude-code-switch/main/quick-install.sh | bash
 
 # 2. 重新加载 shell
 source ~/.zshrc  # 或 ~/.bashrc
@@ -42,13 +42,13 @@ ccm switch-account work  # 切换到已保存账号
 
 ### 快速安装（推荐）
 ```bash
-curl -fsSL https://raw.githubusercontent.com/foreveryh/claude-code-switch/main/quick-install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/xinatcg/claude-code-switch/main/quick-install.sh | bash
 source ~/.zshrc  # 或 ~/.bashrc
 ```
 
 ### 本地安装
 ```bash
-git clone https://github.com/foreveryh/claude-code-switch.git
+git clone https://github.com/xinatcg/claude-code-switch.git
 cd claude-code-switch
 ./install.sh
 source ~/.zshrc
@@ -325,7 +325,7 @@ eval "$(./ccm.sh glm china)"
 欢迎贡献！你可以通过以下方式参与：
 
 ### 报告问题
-发现 bug 或有功能建议？[提交 Issue](https://github.com/foreveryh/claude-code-switch/issues)。
+发现 bug 或有功能建议？[提交 Issue](https://github.com/xinatcg/claude-code-switch/issues)。
 
 ### 提交代码
 1. Fork 本仓库
@@ -336,7 +336,7 @@ eval "$(./ccm.sh glm china)"
 
 ### 开发
 ```bash
-git clone https://github.com/foreveryh/claude-code-switch.git
+git clone https://github.com/xinatcg/claude-code-switch.git
 cd claude-code-switch
 ./ccm.sh help    # 本地测试，无需安装
 ```

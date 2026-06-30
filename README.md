@@ -1,8 +1,8 @@
 # Claude Code Switch (ccm)
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![GitHub stars](https://img.shields.io/github/stars/foreveryh/claude-code-switch.svg)](https://github.com/foreveryh/claude-code-switch/stargazers)
-[![GitHub issues](https://img.shields.io/github/issues/foreveryh/claude-code-switch.svg)](https://github.com/foreveryh/claude-code-switch/issues)
+[![GitHub stars](https://img.shields.io/github/stars/xinatcg/claude-code-switch.svg)](https://github.com/xinatcg/claude-code-switch/stargazers)
+[![GitHub issues](https://img.shields.io/github/issues/xinatcg/claude-code-switch.svg)](https://github.com/xinatcg/claude-code-switch/issues)
 
 Switch Claude Code between AI providers with one command.
 
@@ -12,7 +12,7 @@ Switch Claude Code between AI providers with one command.
 
 ```bash
 # 1. Install
-curl -fsSL https://raw.githubusercontent.com/foreveryh/claude-code-switch/main/quick-install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/xinatcg/claude-code-switch/main/quick-install.sh | bash
 
 # 2. Reload shell
 source ~/.zshrc  # or ~/.bashrc
@@ -42,13 +42,13 @@ ccm switch-account work  # switch to saved account
 
 ### Quick Install (Recommended)
 ```bash
-curl -fsSL https://raw.githubusercontent.com/foreveryh/claude-code-switch/main/quick-install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/xinatcg/claude-code-switch/main/quick-install.sh | bash
 source ~/.zshrc  # or ~/.bashrc
 ```
 
 ### Local Install
 ```bash
-git clone https://github.com/foreveryh/claude-code-switch.git
+git clone https://github.com/xinatcg/claude-code-switch.git
 cd claude-code-switch
 ./install.sh
 source ~/.zshrc
@@ -332,7 +332,7 @@ eval "$(./ccm.sh glm china)"
 Contributions are welcome! Here's how you can help:
 
 ### Report Issues
-Found a bug or have a feature request? [Open an issue](https://github.com/foreveryh/claude-code-switch/issues).
+Found a bug or have a feature request? [Open an issue](https://github.com/xinatcg/claude-code-switch/issues).
 
 ### Submit Code
 1. Fork the repository
@@ -343,7 +343,7 @@ Found a bug or have a feature request? [Open an issue](https://github.com/foreve
 
 ### Development
 ```bash
-git clone https://github.com/foreveryh/claude-code-switch.git
+git clone https://github.com/xinatcg/claude-code-switch.git
 cd claude-code-switch
 ./ccm.sh help    # Test locally without installing
 ```
