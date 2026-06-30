@@ -434,51 +434,49 @@ project_write_glm_settings() {
         echo -e "${YELLOW}💡 Usage: ccm project glm [global|china]${NC}" >&2
         return 1
     fi
-    local settings_path
-    settings_path="$(project_settings_path)"
-    local settings_dir
-    settings_dir="$(dirname "$settings_path")"
 
     if ! is_effectively_set "$GLM_API_KEY"; then
         echo -e "${RED}❌ Please configure GLM_API_KEY before writing project settings${NC}" >&2
         return 1
     fi
 
-    local glm_model="${GLM_MODEL:-glm-5.2}"
-    local base_url=""
-    case "$region" in
-        "global")
-            base_url="https://api.z.ai/api/anthropic"
-            ;;
-        "china")
-            base_url="https://open.bigmodel.cn/api/anthropic"
-            ;;
-    esac
+    local settings_path; settings_path="$(project_settings_path)"
+    local settings_dir; settings_dir="$(dirname "$settings_path")"
 
-    if [[ -f "$settings_path" ]]; then
-        if ! grep -q '"ccmManaged"[[:space:]]*:[[:space:]]*true' "$settings_path"; then
-            backup_project_settings "$settings_path"
-        fi
+    # 备份既有非 ccm 管理的设置
+    if [[ -f "$settings_path" ]] \
+       && ! grep -q '"ccmManaged"[[:space:]]*:[[:space:]]*true' "$settings_path"; then
+        backup_project_settings "$settings_path"
     fi
 
     mkdir -p "$settings_dir"
-  cat > "$settings_path" <<EOF
+
+    # 消费唯一数据源，并把占位 ${GLM_API_KEY} 展开为真实值
+    local env_block; env_block="$(get_glm_env_map "$region")"
+    env_block="${env_block//\$\{GLM_API_KEY\}/$GLM_API_KEY}"
+
+    # 组装 JSON env 行（key/value 均为安全字符，无需转义）
+    local json_lines=""
+    while IFS='=' read -r k v; do
+        [[ -z "$k" ]] && continue
+        json_lines+="    \"${k}\": \"${v}\""'\n'
+    done <<< "$env_block"
+    # 去掉末尾换行
+    json_lines="$(printf '%b' "$json_lines" | sed '/^$/d; $!{s/$/,/}')"
+
+    cat > "$settings_path" <<EOF
 {
   "ccmManaged": true,
+  "ccmProvider": "glm",
+  "ccmRegion": "${region}",
   "env": {
-    "ANTHROPIC_BASE_URL": "${base_url}",
-    "ANTHROPIC_AUTH_TOKEN": "${GLM_API_KEY}",
-    "ANTHROPIC_MODEL": "${glm_model}",
-    "ANTHROPIC_DEFAULT_SONNET_MODEL": "${glm_model}",
-    "ANTHROPIC_DEFAULT_OPUS_MODEL": "${glm_model}",
-    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "${glm_model}",
-    "CLAUDE_CODE_SUBAGENT_MODEL": "${glm_model}"
+${json_lines}
   }
 }
 EOF
     chmod 600 "$settings_path"
     echo -e "${GREEN}✅ Wrote project settings for GLM (${region}) at:${NC} $settings_path" >&2
-    echo -e "${YELLOW}💡 This overrides user settings (e.g. Quotio) for this project only.${NC}" >&2
+    echo -e "${YELLOW}💡 This overrides user settings (e.g. cc-switch-cli) for this project only.${NC}" >&2
 }
 
 project_reset_settings() {
@@ -500,6 +498,12 @@ project_reset_settings() {
 project_write_settings() {
     local provider="$1"
     local region="${2:-global}"
+
+    # GLM 走专属数据源（三模型映射 + 性能参数）
+    if [[ "$provider" == "glm" || "$provider" == "glm5" ]]; then
+        project_write_glm_settings "$region"
+        return $?
+    fi
 
     # Normalize region if needed
     if [[ "$provider" =~ ^(glm|kimi|qwen|minimax)$ ]]; then
