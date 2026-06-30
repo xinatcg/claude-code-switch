@@ -2091,7 +2091,7 @@ emit_openrouter_exports() {
             ;;
     esac
 
-    local prelude="unset ANTHROPIC_BASE_URL ANTHROPIC_API_URL ANTHROPIC_AUTH_TOKEN ANTHROPIC_API_KEY ANTHROPIC_MODEL ANTHROPIC_SMALL_FAST_MODEL ANTHROPIC_DEFAULT_SONNET_MODEL ANTHROPIC_DEFAULT_OPUS_MODEL ANTHROPIC_DEFAULT_HAIKU_MODEL CLAUDE_CODE_SUBAGENT_MODEL API_TIMEOUT_MS CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"
+    local prelude="unset ANTHROPIC_BASE_URL ANTHROPIC_API_URL ANTHROPIC_AUTH_TOKEN ANTHROPIC_API_KEY ANTHROPIC_MODEL ANTHROPIC_SMALL_FAST_MODEL ANTHROPIC_DEFAULT_SONNET_MODEL ANTHROPIC_DEFAULT_OPUS_MODEL ANTHROPIC_DEFAULT_HAIKU_MODEL CLAUDE_CODE_SUBAGENT_MODEL CLAUDE_CODE_AUTO_COMPACT_WINDOW API_TIMEOUT_MS CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"
     echo "$prelude"
     echo "export ANTHROPIC_BASE_URL='https://openrouter.ai/api'"
     echo "export ANTHROPIC_API_URL='https://openrouter.ai/api'"
@@ -2111,7 +2111,7 @@ emit_env_exports() {
     load_config || return 1
 
     # 通用前导：清理旧变量
-    local prelude="unset ANTHROPIC_BASE_URL ANTHROPIC_API_URL ANTHROPIC_AUTH_TOKEN ANTHROPIC_API_KEY ANTHROPIC_MODEL ANTHROPIC_SMALL_FAST_MODEL ANTHROPIC_DEFAULT_SONNET_MODEL ANTHROPIC_DEFAULT_OPUS_MODEL ANTHROPIC_DEFAULT_HAIKU_MODEL CLAUDE_CODE_SUBAGENT_MODEL API_TIMEOUT_MS CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"
+    local prelude="unset ANTHROPIC_BASE_URL ANTHROPIC_API_URL ANTHROPIC_AUTH_TOKEN ANTHROPIC_API_KEY ANTHROPIC_MODEL ANTHROPIC_SMALL_FAST_MODEL ANTHROPIC_DEFAULT_SONNET_MODEL ANTHROPIC_DEFAULT_OPUS_MODEL ANTHROPIC_DEFAULT_HAIKU_MODEL CLAUDE_CODE_SUBAGENT_MODEL CLAUDE_CODE_AUTO_COMPACT_WINDOW API_TIMEOUT_MS CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"
 
     case "$target" in
         "open")
@@ -2204,23 +2204,15 @@ emit_env_exports() {
                 echo -e "${YELLOW}💡 Usage: ccm glm [global|china]${NC}" >&2
                 return 1
             fi
-            local glm_base_url=""
-            case "$glm_region" in
-                "global")
-                    glm_base_url="https://api.z.ai/api/anthropic"
-                    ;;
-                "china")
-                    glm_base_url="https://open.bigmodel.cn/api/anthropic"
-                    ;;
-            esac
-            local glm_model="${GLM_MODEL:-glm-5.2}"
+            # base_url / 模型映射由 get_glm_env_map 统一提供
             echo "$prelude"
-            echo "export ANTHROPIC_BASE_URL='${glm_base_url}'"
             echo "if [ -f \"\$HOME/.ccm_config\" ]; then . \"\$HOME/.ccm_config\" >/dev/null 2>&1; fi"
-            echo "export ANTHROPIC_AUTH_TOKEN=\"\${GLM_API_KEY}\""
-            echo "export ANTHROPIC_MODEL='${glm_model}'"
-            emit_default_models "$glm_model" "$glm_model" "$glm_model"
-            emit_subagent_model "$glm_model"
+            # 消费唯一数据源：${GLM_API_KEY} 占位在 eval 时由 shell 展开
+            local _k _v
+            while IFS='=' read -r _k _v; do
+                [[ -z "$_k" ]] && continue
+                echo "export ${_k}=\"${_v}\""
+            done < <(get_glm_env_map "$glm_region")
             ;;
         "minimax"|"mm")
             if ! is_effectively_set "$MINIMAX_API_KEY"; then
