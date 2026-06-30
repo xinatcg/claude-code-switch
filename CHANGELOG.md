@@ -1,5 +1,17 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+- `ccm project glm` / `ccm user glm` / `ccm glm` 产出符合智谱官方文档的 env：
+  HAIKU=`glm-4.7`，SONNET/OPUS=`glm-5.2[1m]`，移除多余的 `ANTHROPIC_MODEL`，
+  新增 `CLAUDE_CODE_AUTO_COMPACT_WINDOW`/`CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`/`API_TIMEOUT_MS`。
+- GLM 配置收敛到唯一数据源 `get_glm_env_map`，消除三处重复。
+
+### Added
+- `ccm user` 兼容 cc-switch-cli：检测到 `~/.claude/settings.json` 非本工具管理时默认拦下，
+  需 `--force` 覆盖（先备份）。全局与项目级配置分工明确。
+
 ## [2.3.0] - 2026-01-26
 
 ### Changed

@@ -237,6 +237,8 @@ ccm user reset           # Remove ccm settings, use env vars instead
 - You want a persistent default that survives shell restarts
 - Environment variables are being overridden by something else
 
+> **Division of labor with cc-switch-cli**: Let cc-switch-cli own the global config (`~/.claude/settings.json`); use `ccm project glm [global|china]` for project-level overrides (`.claude/settings.local.json`). If `ccm user glm` detects the global config is managed by an external tool, it bails out by default — pass `--force` to override (a backup is taken first).
+
 ### Project-Only Override
 Override settings for a specific project (keeps global settings intact):
 
@@ -290,7 +292,7 @@ DEEPSEEK_MODEL=deepseek-chat
 KIMI_MODEL=kimi-k2.5
 KIMI_CN_MODEL=kimi-k2.5
 QWEN_MODEL=qwen3-max-2026-01-23
-GLM_MODEL=glm-5
+GLM_MODEL=glm-5.2[1m]
 MINIMAX_MODEL=MiniMax-M2.5
 SEED_MODEL=ark-code-latest
 CLAUDE_MODEL=claude-sonnet-4-5-20250929

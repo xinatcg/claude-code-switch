@@ -228,6 +228,10 @@ ccm user reset           # 移除 ccm 设置，使用环境变量
 - 你想要一个持久化的默认设置，不受 shell 重启影响
 - 环境变量被其他东西覆盖了
 
+> **与 cc-switch-cli 分工**：建议全局配置（`~/.claude/settings.json`）交给 cc-switch-cli 管理，
+> 项目级覆盖（`.claude/settings.local.json`）用 `ccm project glm [global|china]`。
+> `ccm user glm` 若检测到全局已被外部工具接管，默认拦下，加 `--force` 可强制覆盖。
+
 ### 项目级覆盖
 为特定项目覆盖设置（保持全局设置不变）：
 
@@ -281,7 +285,7 @@ DEEPSEEK_MODEL=deepseek-chat
 KIMI_MODEL=kimi-k2.5
 KIMI_CN_MODEL=kimi-k2.5
 QWEN_MODEL=qwen3-max-2026-01-23
-GLM_MODEL=glm-5
+GLM_MODEL=glm-5.2[1m]
 MINIMAX_MODEL=MiniMax-M2.5
 SEED_MODEL=ark-code-latest
 CLAUDE_MODEL=claude-sonnet-4-5-20250929
