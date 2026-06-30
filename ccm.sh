@@ -394,6 +394,27 @@ normalize_region() {
 # Claude Pro 账号管理功能
 # ============================================
 
+# GLM env 唯一数据源：给定已规范化的 region，逐行输出 "KEY=value"。
+# value 内 ${GLM_API_KEY} 为占位符，由调用方在写文件 / export 时展开为真实值。
+# 两 region 仅 base_url 不同；模型映射一致：HAIKU=glm-4.7，SONNET/OPUS/SUBAGENT=glm-5.2[1m]。
+get_glm_env_map() {
+    local region="$1"
+    local base_url
+    case "$region" in
+        "china")  base_url="https://open.bigmodel.cn/api/anthropic" ;;
+        "global"|*) base_url="https://api.z.ai/api/anthropic" ;;
+    esac
+    echo "ANTHROPIC_BASE_URL=${base_url}"
+    echo 'ANTHROPIC_AUTH_TOKEN=${GLM_API_KEY}'
+    echo 'ANTHROPIC_DEFAULT_HAIKU_MODEL=glm-4.7'
+    echo 'ANTHROPIC_DEFAULT_SONNET_MODEL=glm-5.2[1m]'
+    echo 'ANTHROPIC_DEFAULT_OPUS_MODEL=glm-5.2[1m]'
+    echo 'CLAUDE_CODE_SUBAGENT_MODEL=glm-5.2[1m]'
+    echo 'CLAUDE_CODE_AUTO_COMPACT_WINDOW=1000000'
+    echo 'CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1'
+    echo 'API_TIMEOUT_MS=3000000'
+}
+
 project_settings_path() {
     echo "$PWD/.claude/settings.local.json"
 }
@@ -413,51 +434,49 @@ project_write_glm_settings() {
         echo -e "${YELLOW}💡 Usage: ccm project glm [global|china]${NC}" >&2
         return 1
     fi
-    local settings_path
-    settings_path="$(project_settings_path)"
-    local settings_dir
-    settings_dir="$(dirname "$settings_path")"
 
     if ! is_effectively_set "$GLM_API_KEY"; then
         echo -e "${RED}❌ Please configure GLM_API_KEY before writing project settings${NC}" >&2
         return 1
     fi
 
-    local glm_model="${GLM_MODEL:-glm-5.2}"
-    local base_url=""
-    case "$region" in
-        "global")
-            base_url="https://api.z.ai/api/anthropic"
-            ;;
-        "china")
-            base_url="https://open.bigmodel.cn/api/anthropic"
-            ;;
-    esac
+    local settings_path; settings_path="$(project_settings_path)"
+    local settings_dir; settings_dir="$(dirname "$settings_path")"
 
-    if [[ -f "$settings_path" ]]; then
-        if ! grep -q '"ccmManaged"[[:space:]]*:[[:space:]]*true' "$settings_path"; then
-            backup_project_settings "$settings_path"
-        fi
+    # 备份既有非 ccm 管理的设置
+    if [[ -f "$settings_path" ]] \
+       && ! grep -q '"ccmManaged"[[:space:]]*:[[:space:]]*true' "$settings_path"; then
+        backup_project_settings "$settings_path"
     fi
 
     mkdir -p "$settings_dir"
-  cat > "$settings_path" <<EOF
+
+    # 消费唯一数据源，并把占位 ${GLM_API_KEY} 展开为真实值
+    local env_block; env_block="$(get_glm_env_map "$region")"
+    env_block="${env_block//\$\{GLM_API_KEY\}/$GLM_API_KEY}"
+
+    # 组装 JSON env 行（GLM_API_KEY 期望为 ASCII 安全字符；若含 `"` 或 `\` 会破坏此 bash 组装的 JSON（python3 路径无此问题））
+    local json_lines=""
+    while IFS='=' read -r k v; do
+        [[ -z "$k" ]] && continue
+        json_lines+="    \"${k}\": \"${v}\""'\n'
+    done <<< "$env_block"
+    # 去掉末尾换行
+    json_lines="$(printf '%b' "$json_lines" | sed '/^$/d; $!{s/$/,/}')"
+
+    cat > "$settings_path" <<EOF
 {
   "ccmManaged": true,
+  "ccmProvider": "glm",
+  "ccmRegion": "${region}",
   "env": {
-    "ANTHROPIC_BASE_URL": "${base_url}",
-    "ANTHROPIC_AUTH_TOKEN": "${GLM_API_KEY}",
-    "ANTHROPIC_MODEL": "${glm_model}",
-    "ANTHROPIC_DEFAULT_SONNET_MODEL": "${glm_model}",
-    "ANTHROPIC_DEFAULT_OPUS_MODEL": "${glm_model}",
-    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "${glm_model}",
-    "CLAUDE_CODE_SUBAGENT_MODEL": "${glm_model}"
+${json_lines}
   }
 }
 EOF
     chmod 600 "$settings_path"
     echo -e "${GREEN}✅ Wrote project settings for GLM (${region}) at:${NC} $settings_path" >&2
-    echo -e "${YELLOW}💡 This overrides user settings (e.g. Quotio) for this project only.${NC}" >&2
+    echo -e "${YELLOW}💡 This overrides user settings (e.g. cc-switch-cli) for this project only.${NC}" >&2
 }
 
 project_reset_settings() {
@@ -479,6 +498,12 @@ project_reset_settings() {
 project_write_settings() {
     local provider="$1"
     local region="${2:-global}"
+
+    # GLM 走专属数据源（三模型映射 + 性能参数）
+    if [[ "$provider" == "glm" || "$provider" == "glm5" ]]; then
+        project_write_glm_settings "$region"
+        return $?
+    fi
 
     # Normalize region if needed
     if [[ "$provider" =~ ^(glm|kimi|qwen|minimax)$ ]]; then
@@ -693,9 +718,108 @@ get_provider_config() {
     echo "${config_base_url}|${config_model}|${config_token_var}"
 }
 
+# GLM 用户级写入：消费唯一数据源写 ~/.claude/settings.json。
+# cc-switch-cli 兼容检测（ccmManaged guard）由通用入口 user_write_settings 统一完成。
+user_write_glm_settings() {
+    local region="${1:-global}"
+    local normalized
+    if ! normalized="$(normalize_region "$region")"; then
+        echo -e "${RED}❌ Invalid region: $region${NC}" >&2
+        echo -e "${YELLOW}💡 Usage: ccm user glm [global|china] [--force]${NC}" >&2
+        return 1
+    fi
+    region="$normalized"
+
+    if ! is_effectively_set "$GLM_API_KEY"; then
+        echo -e "${RED}❌ Please configure GLM_API_KEY${NC}" >&2
+        return 1
+    fi
+
+    local settings_path; settings_path="$(user_settings_path)"
+    local settings_dir; settings_dir="$(dirname "$settings_path")"
+
+    mkdir -p "$settings_dir"
+
+    local env_block; env_block="$(get_glm_env_map "$region")"
+    env_block="${env_block//\$\{GLM_API_KEY\}/$GLM_API_KEY}"
+
+    if command -v python3 >/dev/null 2>&1; then
+        # 用 python 把 env_block 编为 JSON，经环境变量传入，规避 heredoc 引号转义
+        export _CCM_GLM_ENV_JSON _CCM_GLM_SETTINGS_PATH _CCM_GLM_REGION
+        _CCM_GLM_ENV_JSON="$(printf '%s\n' "$env_block" | python3 -c 'import sys,json; print(json.dumps(dict(l.split("=",1) for l in sys.stdin.read().splitlines() if "=" in l)))')"
+        _CCM_GLM_SETTINGS_PATH="$settings_path"
+        _CCM_GLM_REGION="$region"
+        python3 << 'PYTHON_EOF'
+import json, os
+p = os.environ['_CCM_GLM_SETTINGS_PATH']
+existing = {}
+if os.path.exists(p):
+    try:
+        with open(p) as f:
+            existing = json.load(f)
+    except Exception:
+        existing = {}
+existing['ccmManaged'] = True
+existing['ccmProvider'] = 'glm'
+existing['ccmRegion'] = os.environ['_CCM_GLM_REGION']
+existing['env'] = json.loads(os.environ['_CCM_GLM_ENV_JSON'])
+with open(p, 'w') as f:
+    json.dump(existing, f, indent=2)
+os.chmod(p, 0o600)
+PYTHON_EOF
+        unset _CCM_GLM_ENV_JSON _CCM_GLM_SETTINGS_PATH _CCM_GLM_REGION
+    else
+        # 回退：纯 heredoc 重写（会丢失既有非 env 字段）
+        local json_lines=""
+        while IFS='=' read -r k v; do
+            [[ -z "$k" ]] && continue
+            json_lines+="    \"${k}\": \"${v}\""'\n'
+        done <<< "$env_block"
+        json_lines="$(printf '%b' "$json_lines" | sed '/^$/d; $!{s/$/,/}')"
+        cat > "$settings_path" <<EOF
+{
+  "ccmManaged": true,
+  "ccmProvider": "glm",
+  "ccmRegion": "${region}",
+  "env": {
+${json_lines}
+  }
+}
+EOF
+        chmod 600 "$settings_path"
+    fi
+
+    echo -e "${GREEN}✅ Wrote user-level settings for GLM (${region})${NC}" >&2
+    echo -e "${BLUE}   File: $settings_path${NC}" >&2
+    echo -e "${YELLOW}💡 全局配置建议由 cc-switch-cli 管理；项目级请用 'ccm project glm'。${NC}" >&2
+}
+
 user_write_settings() {
     local provider="$1"
     local region="${2:-global}"
+
+    # 通用 guard：cc-switch-cli 兼容检测（对所有 provider 生效，含 GLM）
+    # 全局 settings.json 存在且非 ccmManaged 时，默认拦下；--force 先备份再接管。
+    local force="0"
+    [[ "${3:-}" == "--force" ]] && force="1"
+    local _guard_settings_path
+    _guard_settings_path="$(user_settings_path)"
+    if [[ -f "$_guard_settings_path" ]] \
+       && ! grep -q '"ccmManaged"[[:space:]]*:[[:space:]]*true' "$_guard_settings_path" 2>/dev/null; then
+        if [[ "$force" != "1" ]]; then
+            echo -e "${YELLOW}⚠️  ~/.claude/settings.json 已由外部工具管理（可能是 cc-switch-cli）。${NC}" >&2
+            echo -e "${YELLOW}   建议改用 'ccm project ${provider}' 仅作用于当前项目，全局交给 cc-switch-cli。${NC}" >&2
+            echo -e "${YELLOW}   如确需 ccm 接管全局，请加 --force 重试（会先备份原文件）。${NC}" >&2
+            return 1
+        fi
+        backup_user_settings "$_guard_settings_path"
+    fi
+
+    # GLM 走专属数据源（通用 guard 已在上游完成 cc-switch-cli 兼容检测）
+    if [[ "$provider" == "glm" || "$provider" == "glm5" ]]; then
+        user_write_glm_settings "$region"
+        return $?
+    fi
 
     # Normalize region if needed
     if [[ "$provider" =~ ^(glm|kimi|qwen|minimax)$ ]]; then
@@ -726,12 +850,7 @@ user_write_settings() {
     local settings_dir
     settings_dir="$(dirname "$settings_path")"
 
-    # Backup existing settings if not ccm-managed
-    if [[ -f "$settings_path" ]]; then
-        if ! grep -q '"ccmManaged"[[:space:]]*:[[:space:]]*true' "$settings_path" 2>/dev/null; then
-            backup_user_settings "$settings_path"
-        fi
-    fi
+    # Backup existing settings if not ccm-managed（通用 guard 已在 force 路径完成备份）
 
     mkdir -p "$settings_dir"
 
@@ -852,8 +971,12 @@ user_show_usage() {
     echo -e "${BLUE}User-level settings (writes to ~/.claude/settings.json)${NC}" >&2
     echo "" >&2
     echo "Usage:" >&2
-    echo "  ccm user <provider> [region]   - Write provider settings to user-level" >&2
-    echo "  ccm user reset                  - Remove ccm settings, restore env var control" >&2
+    echo "  ccm user <provider> [region] [--force]   - Write provider settings to user-level" >&2
+    echo "  ccm user reset                            - Remove ccm settings, restore env var control" >&2
+    echo "" >&2
+    echo "Note: 若 ~/.claude/settings.json 已由 cc-switch-cli 等外部工具管理，" >&2
+    echo "      默认会拦下；加 --force 覆盖（会先备份）。建议全局交给 cc-switch-cli，" >&2
+    echo "      项目级用 'ccm project <provider>'。" >&2
     echo "" >&2
     echo "Providers:" >&2
     echo "  glm [global|china]    - GLM" >&2
@@ -865,7 +988,8 @@ user_show_usage() {
     echo "  claude                - Claude (official)" >&2
     echo "" >&2
     echo "Examples:" >&2
-    echo "  ccm user glm global   # Use GLM globally" >&2
+    echo "  ccm user glm global          # Use GLM globally (会被 cc-switch-cli 检测拦下)" >&2
+    echo "  ccm user glm china --force   # 强制覆盖全局（先备份）" >&2
     echo "  ccm user deepseek     # Use DeepSeek globally" >&2
     echo "  ccm user reset        # Remove, use env vars instead" >&2
 }
@@ -2066,7 +2190,7 @@ emit_openrouter_exports() {
             ;;
     esac
 
-    local prelude="unset ANTHROPIC_BASE_URL ANTHROPIC_API_URL ANTHROPIC_AUTH_TOKEN ANTHROPIC_API_KEY ANTHROPIC_MODEL ANTHROPIC_SMALL_FAST_MODEL ANTHROPIC_DEFAULT_SONNET_MODEL ANTHROPIC_DEFAULT_OPUS_MODEL ANTHROPIC_DEFAULT_HAIKU_MODEL CLAUDE_CODE_SUBAGENT_MODEL API_TIMEOUT_MS CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"
+    local prelude="unset ANTHROPIC_BASE_URL ANTHROPIC_API_URL ANTHROPIC_AUTH_TOKEN ANTHROPIC_API_KEY ANTHROPIC_MODEL ANTHROPIC_SMALL_FAST_MODEL ANTHROPIC_DEFAULT_SONNET_MODEL ANTHROPIC_DEFAULT_OPUS_MODEL ANTHROPIC_DEFAULT_HAIKU_MODEL CLAUDE_CODE_SUBAGENT_MODEL CLAUDE_CODE_AUTO_COMPACT_WINDOW API_TIMEOUT_MS CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"
     echo "$prelude"
     echo "export ANTHROPIC_BASE_URL='https://openrouter.ai/api'"
     echo "export ANTHROPIC_API_URL='https://openrouter.ai/api'"
@@ -2086,7 +2210,7 @@ emit_env_exports() {
     load_config || return 1
 
     # 通用前导：清理旧变量
-    local prelude="unset ANTHROPIC_BASE_URL ANTHROPIC_API_URL ANTHROPIC_AUTH_TOKEN ANTHROPIC_API_KEY ANTHROPIC_MODEL ANTHROPIC_SMALL_FAST_MODEL ANTHROPIC_DEFAULT_SONNET_MODEL ANTHROPIC_DEFAULT_OPUS_MODEL ANTHROPIC_DEFAULT_HAIKU_MODEL CLAUDE_CODE_SUBAGENT_MODEL API_TIMEOUT_MS CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"
+    local prelude="unset ANTHROPIC_BASE_URL ANTHROPIC_API_URL ANTHROPIC_AUTH_TOKEN ANTHROPIC_API_KEY ANTHROPIC_MODEL ANTHROPIC_SMALL_FAST_MODEL ANTHROPIC_DEFAULT_SONNET_MODEL ANTHROPIC_DEFAULT_OPUS_MODEL ANTHROPIC_DEFAULT_HAIKU_MODEL CLAUDE_CODE_SUBAGENT_MODEL CLAUDE_CODE_AUTO_COMPACT_WINDOW API_TIMEOUT_MS CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC"
 
     case "$target" in
         "open")
@@ -2179,23 +2303,15 @@ emit_env_exports() {
                 echo -e "${YELLOW}💡 Usage: ccm glm [global|china]${NC}" >&2
                 return 1
             fi
-            local glm_base_url=""
-            case "$glm_region" in
-                "global")
-                    glm_base_url="https://api.z.ai/api/anthropic"
-                    ;;
-                "china")
-                    glm_base_url="https://open.bigmodel.cn/api/anthropic"
-                    ;;
-            esac
-            local glm_model="${GLM_MODEL:-glm-5.2}"
+            # base_url / 模型映射由 get_glm_env_map 统一提供
             echo "$prelude"
-            echo "export ANTHROPIC_BASE_URL='${glm_base_url}'"
             echo "if [ -f \"\$HOME/.ccm_config\" ]; then . \"\$HOME/.ccm_config\" >/dev/null 2>&1; fi"
-            echo "export ANTHROPIC_AUTH_TOKEN=\"\${GLM_API_KEY}\""
-            echo "export ANTHROPIC_MODEL='${glm_model}'"
-            emit_default_models "$glm_model" "$glm_model" "$glm_model"
-            emit_subagent_model "$glm_model"
+            # 消费唯一数据源：${GLM_API_KEY} 占位在 eval 时由 shell 展开
+            local _k _v
+            while IFS='=' read -r _k _v; do
+                [[ -z "$_k" ]] && continue
+                echo "export ${_k}=\"${_v}\""
+            done < <(get_glm_env_map "$glm_region")
             ;;
         "minimax"|"mm")
             if ! is_effectively_set "$MINIMAX_API_KEY"; then
@@ -2434,7 +2550,7 @@ main() {
             shift
             local project_action="${1:-}"
             case "$project_action" in
-                "glm"|"deepseek"|"ds"|"kimi"|"kimi2"|"qwen"|"minimax"|"mm"|"seed"|"doubao"|"claude"|"sonnet"|"s")
+                "glm"|"glm5"|"deepseek"|"ds"|"kimi"|"kimi2"|"qwen"|"minimax"|"mm"|"seed"|"doubao"|"claude"|"sonnet"|"s")
                     project_write_settings "$project_action" "${2:-}"
                     ;;
                 "reset")
@@ -2454,8 +2570,16 @@ main() {
             shift
             local user_action="${1:-}"
             case "$user_action" in
-                "glm"|"deepseek"|"ds"|"kimi"|"kimi2"|"qwen"|"minimax"|"mm"|"seed"|"doubao"|"stepfun"|"claude"|"sonnet"|"s")
-                    user_write_settings "$user_action" "${2:-}"
+                "glm"|"glm5"|"deepseek"|"ds"|"kimi"|"kimi2"|"qwen"|"minimax"|"mm"|"seed"|"doubao"|"stepfun"|"claude"|"sonnet"|"s")
+                    # --force 可出现在任意位置，剥离后剩余首个非 provider 词作为 region
+                    local _ua_force="" _ua_region=""
+                    local _a
+                    for _a in "$@"; do
+                        [[ "$_a" == "--force" ]] && { _ua_force="--force"; continue; }
+                        [[ "$_a" == "$user_action" ]] && continue
+                        [[ -z "$_ua_region" ]] && _ua_region="$_a"
+                    done
+                    user_write_settings "$user_action" "$_ua_region" "$_ua_force"
                     ;;
                 "reset")
                     user_reset_settings

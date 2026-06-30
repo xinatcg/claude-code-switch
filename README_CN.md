@@ -1,8 +1,8 @@
 # Claude Code Switch (ccm)
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![GitHub stars](https://img.shields.io/github/stars/foreveryh/claude-code-switch.svg)](https://github.com/foreveryh/claude-code-switch/stargazers)
-[![GitHub issues](https://img.shields.io/github/issues/foreveryh/claude-code-switch.svg)](https://github.com/foreveryh/claude-code-switch/issues)
+[![GitHub stars](https://img.shields.io/github/stars/xinatcg/claude-code-switch.svg)](https://github.com/xinatcg/claude-code-switch/stargazers)
+[![GitHub issues](https://img.shields.io/github/issues/xinatcg/claude-code-switch.svg)](https://github.com/xinatcg/claude-code-switch/issues)
 
 一条命令切换 Claude Code 的 AI 提供商。
 
@@ -12,7 +12,7 @@
 
 ```bash
 # 1. 安装
-curl -fsSL https://raw.githubusercontent.com/foreveryh/claude-code-switch/main/quick-install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/xinatcg/claude-code-switch/main/quick-install.sh | bash
 
 # 2. 重新加载 shell
 source ~/.zshrc  # 或 ~/.bashrc
@@ -42,13 +42,13 @@ ccm switch-account work  # 切换到已保存账号
 
 ### 快速安装（推荐）
 ```bash
-curl -fsSL https://raw.githubusercontent.com/foreveryh/claude-code-switch/main/quick-install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/xinatcg/claude-code-switch/main/quick-install.sh | bash
 source ~/.zshrc  # 或 ~/.bashrc
 ```
 
 ### 本地安装
 ```bash
-git clone https://github.com/foreveryh/claude-code-switch.git
+git clone https://github.com/xinatcg/claude-code-switch.git
 cd claude-code-switch
 ./install.sh
 source ~/.zshrc
@@ -228,6 +228,10 @@ ccm user reset           # 移除 ccm 设置，使用环境变量
 - 你想要一个持久化的默认设置，不受 shell 重启影响
 - 环境变量被其他东西覆盖了
 
+> **与 cc-switch-cli 分工**：建议全局配置（`~/.claude/settings.json`）交给 cc-switch-cli 管理，
+> 项目级覆盖（`.claude/settings.local.json`）用 `ccm project glm [global|china]`。
+> `ccm user glm` 若检测到全局已被外部工具接管，默认拦下，加 `--force` 可强制覆盖。
+
 ### 项目级覆盖
 为特定项目覆盖设置（保持全局设置不变）：
 
@@ -281,7 +285,7 @@ DEEPSEEK_MODEL=deepseek-chat
 KIMI_MODEL=kimi-k2.5
 KIMI_CN_MODEL=kimi-k2.5
 QWEN_MODEL=qwen3-max-2026-01-23
-GLM_MODEL=glm-5
+GLM_MODEL=glm-5.2[1m]
 MINIMAX_MODEL=MiniMax-M2.5
 SEED_MODEL=ark-code-latest
 CLAUDE_MODEL=claude-sonnet-4-5-20250929
@@ -321,7 +325,7 @@ eval "$(./ccm.sh glm china)"
 欢迎贡献！你可以通过以下方式参与：
 
 ### 报告问题
-发现 bug 或有功能建议？[提交 Issue](https://github.com/foreveryh/claude-code-switch/issues)。
+发现 bug 或有功能建议？[提交 Issue](https://github.com/xinatcg/claude-code-switch/issues)。
 
 ### 提交代码
 1. Fork 本仓库
@@ -332,7 +336,7 @@ eval "$(./ccm.sh glm china)"
 
 ### 开发
 ```bash
-git clone https://github.com/foreveryh/claude-code-switch.git
+git clone https://github.com/xinatcg/claude-code-switch.git
 cd claude-code-switch
 ./ccm.sh help    # 本地测试，无需安装
 ```
