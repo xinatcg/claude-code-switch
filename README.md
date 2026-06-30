@@ -327,6 +327,21 @@ eval "$(./ccm.sh glm china)"
 
 ---
 
+## Releases
+
+This project uses [release-please](https://github.com/googleapis/release-please) for automated versioning.
+
+- Commits following [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, `BREAKING CHANGE`) on `main` open an automated **release PR**.
+- Merging that release PR publishes a new tag, a GitHub Release with changelog, and bumps `CCM_VERSION` in `ccm.sh`.
+
+Check the current version:
+
+```bash
+ccm version      # or: ccm --version
+```
+
+---
+
 ## Contributing
 
 Contributions are welcome! Here's how you can help:
