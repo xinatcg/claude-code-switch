@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.4.1](https://github.com/xinatcg/claude-code-switch/compare/v2.4.0...v2.4.1) (2026-06-30)
+
+
+### Bug Fixes
+
+* 标记 CCM_VERSION 供 release-please 自动更新 ([e529e18](https://github.com/xinatcg/claude-code-switch/commit/e529e1826ba013cfc768ad75c3a3829af100985b))
+
 ## [2.4.0](https://github.com/xinatcg/claude-code-switch/compare/v2.3.0...v2.4.0) (2026-06-30)
 
 
