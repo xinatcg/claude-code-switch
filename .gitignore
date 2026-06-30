@@ -65,4 +65,4 @@ pids
 .obsolete_backup_*/
 
 # Internal documentation (not for end users)
-docs/
+# docs/
