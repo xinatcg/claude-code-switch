@@ -394,6 +394,27 @@ normalize_region() {
 # Claude Pro 账号管理功能
 # ============================================
 
+# GLM env 唯一数据源：给定已规范化的 region，逐行输出 "KEY=value"。
+# value 内 ${GLM_API_KEY} 为占位符，由调用方在写文件 / export 时展开为真实值。
+# 两 region 仅 base_url 不同；模型映射一致：HAIKU=glm-4.7，SONNET/OPUS/SUBAGENT=glm-5.2[1m]。
+get_glm_env_map() {
+    local region="$1"
+    local base_url
+    case "$region" in
+        "china")  base_url="https://open.bigmodel.cn/api/anthropic" ;;
+        "global"|*) base_url="https://api.z.ai/api/anthropic" ;;
+    esac
+    echo "ANTHROPIC_BASE_URL=${base_url}"
+    echo 'ANTHROPIC_AUTH_TOKEN=${GLM_API_KEY}'
+    echo 'ANTHROPIC_DEFAULT_HAIKU_MODEL=glm-4.7'
+    echo 'ANTHROPIC_DEFAULT_SONNET_MODEL=glm-5.2[1m]'
+    echo 'ANTHROPIC_DEFAULT_OPUS_MODEL=glm-5.2[1m]'
+    echo 'CLAUDE_CODE_SUBAGENT_MODEL=glm-5.2[1m]'
+    echo 'CLAUDE_CODE_AUTO_COMPACT_WINDOW=1000000'
+    echo 'CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1'
+    echo 'API_TIMEOUT_MS=3000000'
+}
+
 project_settings_path() {
     echo "$PWD/.claude/settings.local.json"
 }
