@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.4.6](https://github.com/xinatcg/claude-code-switch/compare/v2.4.5...v2.4.6) (2026-07-07)
+
+
+### Bug Fixes
+
+* ccm project/user glm 的 JSON 组装改 BSD sed 兼容（修 macOS） ([3113a72](https://github.com/xinatcg/claude-code-switch/commit/3113a7221591287b5fb446e75a1e3a6bab762ea5))
+
 ## [2.4.5](https://github.com/xinatcg/claude-code-switch/compare/v2.4.4...v2.4.5) (2026-07-07)
 
 
