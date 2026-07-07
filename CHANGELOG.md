@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.4.4](https://github.com/xinatcg/claude-code-switch/compare/v2.4.3...v2.4.4) (2026-07-07)
+
+
+### Bug Fixes
+
+* install.sh 默认 GITHUB_REPO 改为 xinatcg（原 foreveryh 拉到旧版 ccm.sh） ([e58b08e](https://github.com/xinatcg/claude-code-switch/commit/e58b08e7d0102809dd2885035cb639de53362d32))
+
 ## [2.4.3](https://github.com/xinatcg/claude-code-switch/compare/v2.4.2...v2.4.3) (2026-07-07)
 
 

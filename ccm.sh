@@ -9,7 +9,7 @@
 ############################################################
 
 # 工具版本号（release-please 按 x-release-please-version 标记自动 bump）
-CCM_VERSION="2.4.3"  # x-release-please-version
+CCM_VERSION="2.4.4"  # x-release-please-version
 
 # 脚本颜色定义
 RED='\033[0;31m'
