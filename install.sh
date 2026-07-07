@@ -6,7 +6,7 @@ set -euo pipefail
 # Optional: system-level, project-level, rc-function injection, legacy cleanup
 
 # GitHub repository info
-GITHUB_REPO="${GITHUB_REPO:-foreveryh/claude-code-switch}"
+GITHUB_REPO="${GITHUB_REPO:-xinatcg/claude-code-switch}"
 GITHUB_BRANCH="${GITHUB_BRANCH:-main}"
 GITHUB_RAW="https://raw.githubusercontent.com/${GITHUB_REPO}/${GITHUB_BRANCH}"
 
