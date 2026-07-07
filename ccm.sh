@@ -465,7 +465,7 @@ project_write_glm_settings() {
         json_lines+="    \"${k}\": \"${v}\""'\n'
     done <<< "$env_block"
     # 去掉末尾换行
-    json_lines="$(printf '%b' "$json_lines" | sed '/^$/d; $!{s/$/,/}')"
+    json_lines="$(printf '%b' "$json_lines" | sed '/^$/d' | sed 's/$/,/' | sed '$ s/,$//')"
 
     cat > "$settings_path" <<EOF
 {
@@ -778,7 +778,7 @@ PYTHON_EOF
             [[ -z "$k" ]] && continue
             json_lines+="    \"${k}\": \"${v}\""'\n'
         done <<< "$env_block"
-        json_lines="$(printf '%b' "$json_lines" | sed '/^$/d; $!{s/$/,/}')"
+        json_lines="$(printf '%b' "$json_lines" | sed '/^$/d' | sed 's/$/,/' | sed '$ s/,$//')"
         cat > "$settings_path" <<EOF
 {
   "ccmManaged": true,
