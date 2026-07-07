@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.4.3](https://github.com/xinatcg/claude-code-switch/compare/v2.4.2...v2.4.3) (2026-07-07)
+
+
+### Bug Fixes
+
+* install.sh ccm/ccc 生成改直接 heredoc 写临时文件（修 macOS bash 3.2） ([6df1314](https://github.com/xinatcg/claude-code-switch/commit/6df131474c30b8e790e37084b722cd0087edc524))
+
 ## [2.4.2](https://github.com/xinatcg/claude-code-switch/compare/v2.4.1...v2.4.2) (2026-07-07)
 
 
