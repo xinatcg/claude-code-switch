@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.4.2](https://github.com/xinatcg/claude-code-switch/compare/v2.4.1...v2.4.2) (2026-07-07)
+
+
+### Bug Fixes
+
+* install.sh 在 macOS bash 3.2 下 ccc 生成报 account unbound ([a174782](https://github.com/xinatcg/claude-code-switch/commit/a174782c7b33c115fda30feea012ce4548664563))
+
 ## [2.4.1](https://github.com/xinatcg/claude-code-switch/compare/v2.4.0...v2.4.1) (2026-06-30)
 
 
