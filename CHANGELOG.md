@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.4.5](https://github.com/xinatcg/claude-code-switch/compare/v2.4.4...v2.4.5) (2026-07-07)
+
+
+### Bug Fixes
+
+* rc 注入的 ccm() case 加 version（原走 eval 报 command not found: 2.4.4） ([e160008](https://github.com/xinatcg/claude-code-switch/commit/e1600087263c4d386544ad5c6ed91482cb728329))
+
 ## [2.4.4](https://github.com/xinatcg/claude-code-switch/compare/v2.4.3...v2.4.4) (2026-07-07)
 
 
