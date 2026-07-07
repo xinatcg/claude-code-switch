@@ -515,24 +515,23 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 CCM="$SCRIPT_DIR/../ccm.sh"
 
 usage() {
-    cat <<EOF2
-Usage: ccc <model> [region|variant] [claude-options]
-       ccc open <provider> [claude-options]
-       ccc <account> [claude-options]        # Switch account then launch (default model)
-       ccc <model>:<account> [claude-options]
-
-Examples:
-  ccc deepseek                     # Launch Claude Code with DeepSeek
-  ccc open kimi                    # Launch with OpenRouter (kimi)
-  ccc kimi --dangerously-skip-permissions  # Pass options to Claude Code
-  ccc woohelps                     # Switch to 'woohelps' account and launch
-  ccc claude:work                  # Switch to 'work' account and use Claude
-
-Available models:
-  Official: deepseek, glm, kimi, qwen, seed|doubao, claude, minimax
-  OpenRouter: open <provider>
-  Account:  <account> | claude:<account>
-EOF2
+    printf '%s\n' \
+        'Usage: ccc <model> [region|variant] [claude-options]' \
+        '       ccc open <provider> [claude-options]' \
+        '       ccc <account> [claude-options]        # Switch account then launch (default model)' \
+        '       ccc <model>:<account> [claude-options]' \
+        '' \
+        'Examples:' \
+        '  ccc deepseek                     # Launch Claude Code with DeepSeek' \
+        '  ccc open kimi                    # Launch with OpenRouter (kimi)' \
+        '  ccc kimi --dangerously-skip-permissions  # Pass options to Claude Code' \
+        "  ccc woohelps                     # Switch to 'woohelps' account and launch" \
+        "  ccc claude:work                  # Switch to 'work' account and use Claude" \
+        '' \
+        'Available models:' \
+        '  Official: deepseek, glm, kimi, qwen, seed|doubao, claude, minimax' \
+        '  OpenRouter: open <provider>' \
+        '  Account:  <account> | claude:<account>'
 }
 
 if [[ ! -f "$CCM" ]]; then
@@ -637,24 +636,23 @@ set -euo pipefail
 CCM="__DATA_DIR__/ccm.sh"
 
 usage() {
-    cat <<EOF2
-Usage: ccc <model> [region|variant] [claude-options]
-       ccc open <provider> [claude-options]
-       ccc <account> [claude-options]        # Switch account then launch (default model)
-       ccc <model>:<account> [claude-options]
-
-Examples:
-  ccc deepseek                     # Launch Claude Code with DeepSeek
-  ccc open kimi                    # Launch with OpenRouter (kimi)
-  ccc kimi --dangerously-skip-permissions  # Pass options to Claude Code
-  ccc woohelps                     # Switch to 'woohelps' account and launch
-  ccc claude:work                  # Switch to 'work' account and use Claude
-
-Available models:
-  Official: deepseek, glm, kimi, qwen, seed|doubao, claude, minimax
-  OpenRouter: open <provider>
-  Account:  <account> | claude:<account>
-EOF2
+    printf '%s\n' \
+        'Usage: ccc <model> [region|variant] [claude-options]' \
+        '       ccc open <provider> [claude-options]' \
+        '       ccc <account> [claude-options]        # Switch account then launch (default model)' \
+        '       ccc <model>:<account> [claude-options]' \
+        '' \
+        'Examples:' \
+        '  ccc deepseek                     # Launch Claude Code with DeepSeek' \
+        '  ccc open kimi                    # Launch with OpenRouter (kimi)' \
+        '  ccc kimi --dangerously-skip-permissions  # Pass options to Claude Code' \
+        "  ccc woohelps                     # Switch to 'woohelps' account and launch" \
+        "  ccc claude:work                  # Switch to 'work' account and use Claude" \
+        '' \
+        'Available models:' \
+        '  Official: deepseek, glm, kimi, qwen, seed|doubao, claude, minimax' \
+        '  OpenRouter: open <provider>' \
+        '  Account:  <account> | claude:<account>'
 }
 
 if [[ ! -f "$CCM" ]]; then
