@@ -261,7 +261,7 @@ ccm() {
 unalias ccc 2>/dev/null || true
 unset -f ccc 2>/dev/null || true
 ccc() {
-  if [[ \$# -eq 0 ]]; then
+  if [[ \$# -eq 0 || "\${1:-}" == "-h" || "\${1:-}" == "--help" ]]; then
     echo "Usage: ccc <model> [region|variant] [claude-options]"
     echo "       ccc open <provider> [claude-options]"
     echo "       ccc <account> [claude-options]            # Switch account then launch"
@@ -278,7 +278,10 @@ ccc() {
     echo "  Official: deepseek, glm, kimi, qwen, seed|doubao, claude, minimax"
     echo "  OpenRouter: open <provider>"
     echo "  Account:  <account> | claude:<account>"
-    return 1
+    if [[ \$# -eq 0 ]]; then
+      return 1
+    fi
+    return 0
   fi
 
   local model=""
@@ -546,6 +549,11 @@ if [[ $# -lt 1 ]]; then
     exit 1
 fi
 
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+    usage
+    exit 0
+fi
+
 model=""
 open_provider=""
 region_arg=""
@@ -666,6 +674,11 @@ fi
 if [[ $# -lt 1 ]]; then
     usage
     exit 1
+fi
+
+if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
+    usage
+    exit 0
 fi
 
 model=""
