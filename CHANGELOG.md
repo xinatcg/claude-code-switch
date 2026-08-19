@@ -1,5 +1,18 @@
 # Changelog
 
+## [2.5.0](https://github.com/xinatcg/claude-code-switch/compare/v2.4.6...v2.5.0) (2026-08-19)
+
+
+### Features
+
+* GLM 升级到 glm-5.3（global / china 两 region 同步） ([4ebf6e9](https://github.com/xinatcg/claude-code-switch/commit/4ebf6e9ed50c179e7207b0271e1771091569d6ed))
+
+
+### Bug Fixes
+
+* ccc 支持 -h/--help（原走 eval "$(ccm --help)" 报 🔧: command not found） ([14eff01](https://github.com/xinatcg/claude-code-switch/commit/14eff013d4f06cf647ce72b9bbbc19247d670a7f))
+* quick-install.sh 默认仓库改为 xinatcg（原拉上游旧 install.sh 报 unbound variable） ([ed1b246](https://github.com/xinatcg/claude-code-switch/commit/ed1b246bd4c0823ae840a70c647f46881e951906))
+
 ## [2.4.6](https://github.com/xinatcg/claude-code-switch/compare/v2.4.5...v2.4.6) (2026-07-07)
 
 
