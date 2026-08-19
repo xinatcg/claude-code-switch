@@ -51,11 +51,6 @@ open_provider=""
 region_arg=""
 seed_variant=""
 
-if [[ $# -lt 1 ]]; then
-    usage
-    exit 1
-fi
-
 if [[ "${1:-}" == "open" ]]; then
     shift || true
     if [[ $# -lt 1 ]]; then
