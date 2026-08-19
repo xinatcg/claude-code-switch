@@ -184,7 +184,7 @@ DEEPSEEK_MODEL=deepseek-chat
 KIMI_MODEL=kimi-k2.5
 KIMI_CN_MODEL=kimi-k2.5
 QWEN_MODEL=qwen3-max-2026-01-23
-GLM_MODEL=glm-5.2
+GLM_MODEL=glm-5.3
 CLAUDE_MODEL=claude-sonnet-4-5-20250929
 OPUS_MODEL=claude-opus-4-6
 HAIKU_MODEL=claude-haiku-4-5-20251001
@@ -298,7 +298,7 @@ DEEPSEEK_MODEL=deepseek-chat
 KIMI_MODEL=kimi-k2.5
 KIMI_CN_MODEL=kimi-k2.5
 QWEN_MODEL=qwen3-max-2026-01-23
-GLM_MODEL=glm-5.2
+GLM_MODEL=glm-5.3
 CLAUDE_MODEL=claude-sonnet-4-5-20250929
 OPUS_MODEL=claude-opus-4-6
 HAIKU_MODEL=claude-haiku-4-5-20251001
@@ -399,7 +399,7 @@ normalize_region() {
 
 # GLM env 唯一数据源：给定已规范化的 region，逐行输出 "KEY=value"。
 # value 内 ${GLM_API_KEY} 为占位符，由调用方在写文件 / export 时展开为真实值。
-# 两 region 仅 base_url 不同；模型映射一致：HAIKU=glm-4.7，SONNET/OPUS/SUBAGENT=glm-5.2[1m]。
+# 两 region 仅 base_url 不同；模型映射一致：HAIKU=glm-4.7，SONNET/OPUS/SUBAGENT=glm-5.3[1m]。
 get_glm_env_map() {
     local region="$1"
     local base_url
@@ -410,9 +410,9 @@ get_glm_env_map() {
     echo "ANTHROPIC_BASE_URL=${base_url}"
     echo 'ANTHROPIC_AUTH_TOKEN=${GLM_API_KEY}'
     echo 'ANTHROPIC_DEFAULT_HAIKU_MODEL=glm-4.7'
-    echo 'ANTHROPIC_DEFAULT_SONNET_MODEL=glm-5.2[1m]'
-    echo 'ANTHROPIC_DEFAULT_OPUS_MODEL=glm-5.2[1m]'
-    echo 'CLAUDE_CODE_SUBAGENT_MODEL=glm-5.2[1m]'
+    echo 'ANTHROPIC_DEFAULT_SONNET_MODEL=glm-5.3[1m]'
+    echo 'ANTHROPIC_DEFAULT_OPUS_MODEL=glm-5.3[1m]'
+    echo 'CLAUDE_CODE_SUBAGENT_MODEL=glm-5.3[1m]'
     echo 'CLAUDE_CODE_AUTO_COMPACT_WINDOW=1000000'
     echo 'CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1'
     echo 'API_TIMEOUT_MS=3000000'
@@ -624,7 +624,7 @@ get_provider_config() {
                 return 1
             fi
             config_token_var="GLM_API_KEY"
-            config_model="${GLM_MODEL:-glm-5.2}"
+            config_model="${GLM_MODEL:-glm-5.3}"
             case "$region" in
                 "global") config_base_url="https://api.z.ai/api/anthropic" ;;
                 "china") config_base_url="https://open.bigmodel.cn/api/anthropic" ;;
@@ -1727,7 +1727,7 @@ switch_to_glm() {
             base_url="https://open.bigmodel.cn/api/anthropic"
             ;;
     esac
-    local glm_model="${GLM_MODEL:-glm-5.2}"
+    local glm_model="${GLM_MODEL:-glm-5.3}"
     export ANTHROPIC_BASE_URL="$base_url"
     export ANTHROPIC_AUTH_TOKEN="$GLM_API_KEY"
     export ANTHROPIC_MODEL="$glm_model"
@@ -1964,7 +1964,7 @@ show_help() {
     echo "  ⚡ StepFun              - step-3.5-flash (api.stepfun.ai)"
     echo "  🎯 MiniMax              - MiniMax-M2.5 (api.minimax.io / api.minimaxi.com)"
     echo "  🐪 Qwen                 - qwen3-max-2026-01-23 / qwen3-coder-plus (Coding Plan)"
-    echo "  🇨🇳 GLM                 - glm-5.2 (api.z.ai / open.bigmodel.cn)"
+    echo "  🇨🇳 GLM                 - glm-5.3 (api.z.ai / open.bigmodel.cn)"
     echo "  🧠 Claude Sonnet 4.5    - claude-sonnet-4-5-20250929"
 }
 
@@ -1978,7 +1978,7 @@ ensure_model_override_defaults() {
         "SEED_MODEL=ark-code-latest"
         "STEPFUN_MODEL=step-3.5-flash"
         "QWEN_MODEL=qwen3-max-2026-01-23"
-        "GLM_MODEL=glm-5.2"
+        "GLM_MODEL=glm-5.3"
         "CLAUDE_MODEL=claude-sonnet-4-5-20250929"
         "OPUS_MODEL=claude-opus-4-6"
         "HAIKU_MODEL=claude-haiku-4-5-20251001"
@@ -2055,10 +2055,11 @@ update_config() {
     local -a updates=(
         "KIMI_MODEL|kimi-for-coding|kimi-k2.5"
         "MINIMAX_MODEL|MiniMax-M2.1|MiniMax-M2.5"
-        "GLM_MODEL|glm-4|glm-5.2"
-        "GLM_MODEL|glm-4.6|glm-5.2"
-        "GLM_MODEL|glm-4.7|glm-5.2"
-        "GLM_MODEL|glm-5|glm-5.2"
+        "GLM_MODEL|glm-4|glm-5.3"
+        "GLM_MODEL|glm-4.6|glm-5.3"
+        "GLM_MODEL|glm-4.7|glm-5.3"
+        "GLM_MODEL|glm-5|glm-5.3"
+        "GLM_MODEL|glm-5.2|glm-5.3"
     )
 
     local updated_count=0
