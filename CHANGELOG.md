@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.6.0](https://github.com/xinatcg/claude-code-switch/compare/v2.5.0...v2.6.0) (2026-09-18)
+
+
+### Features
+
+* 新增 OpenAI provider（sub2API 网关直连）并升级 OpenRouter GLM 至 5.3 ([df83ae3](https://github.com/xinatcg/claude-code-switch/commit/df83ae3b59381ce5a4cdd756eaa10a2386127e59))
+
+
+### Bug Fixes
+
+* ccm 补初始化 bailian_variant，修复所有非 bailian 路径启动崩溃 ([3290f7d](https://github.com/xinatcg/claude-code-switch/commit/3290f7d49de19fb16a77996260fef749f85b3a7f))
+
 ## [2.5.0](https://github.com/xinatcg/claude-code-switch/compare/v2.4.6...v2.5.0) (2026-08-19)
 
 
