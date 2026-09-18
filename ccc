@@ -50,6 +50,7 @@ model=""
 open_provider=""
 region_arg=""
 seed_variant=""
+bailian_variant=""
 
 if [[ "${1:-}" == "open" ]]; then
     shift || true
