@@ -94,6 +94,8 @@ QWEN_API_KEY=...
 MINIMAX_API_KEY=...
 ARK_API_KEY=...           # 豆包/Seed
 OPENROUTER_API_KEY=...    # OpenRouter
+OPENAI_API_KEY=...        # OpenAI（经 sub2API 网关，见下文）
+OPENAI_BASE_URL=...       # 可选，sub2API 网关地址（默认 http://localhost:8080）
 CLAUDE_API_KEY=...        # 可选，用于 Claude API（非订阅）
 ```
 
@@ -116,6 +118,7 @@ ccm kimi china        # Kimi 国内
 ccm qwen global       # Qwen 海外
 ccm minimax           # MiniMax
 ccm seed              # 豆包/Seed
+ccm openai            # OpenAI（经 sub2API 网关，gpt-6-astra）
 ccm claude            # Claude 官方
 ```
 
@@ -124,6 +127,7 @@ ccm claude            # Claude 官方
 ccc glm global        # 切换到 GLM 海外，然后启动
 ccc glm china         # 切换到 GLM 国内，然后启动
 ccc open glm          # 通过 OpenRouter
+ccc openai            # OpenAI（经 sub2API 网关）
 ```
 
 ### 查看状态
@@ -162,6 +166,7 @@ ccc                    # 显示 ccc 用法（无参数）
 | MiniMax | `ccm minimax [global\|china]` | global（默认） | `api.minimax.io/anthropic` |
 | | | china | `api.minimaxi.com/anthropic` |
 | 豆包/Seed | `ccm seed [variant]` | - | `ark.cn-beijing.volces.com/api/coding` |
+| OpenAI | `ccm openai` / `ccm gpt` | - | 自建 sub2API 网关（`OPENAI_BASE_URL`） |
 | Claude | `ccm claude` | - | `api.anthropic.com` |
 
 > **GLM Coding 套餐**：[bigmodel.cn/glm-coding](https://www.bigmodel.cn/glm-coding?ic=5XMIOZPPXB)
@@ -180,10 +185,29 @@ ccm seed kimi         # kimi-k2.5
 ### OpenRouter
 ```bash
 ccm open              # 显示帮助
-ccm open glm          # 通过 OpenRouter 使用 GLM
+ccm open glm          # 通过 OpenRouter 使用 GLM（z-ai/glm-5.3）
 ccm open claude       # 通过 OpenRouter 使用 Claude
 ccm open deepseek     # 通过 OpenRouter 使用 DeepSeek
 ```
+
+### OpenAI（经 sub2API 网关）
+
+OpenAI 官方不提供 Anthropic 兼容端点，因此 `ccm openai` 经自部署的 [sub2API](https://github.com/Wei-Shaw/sub2api) 网关接入：由 sub2API 统一管理 ChatGPT 订阅账号，并把 `/v1/messages`（Anthropic 格式）转换为 OpenAI 上游协议。
+
+```bash
+# ~/.ccm_config 中配置
+OPENAI_BASE_URL=http://your-sub2api-host:8080   # 尾部斜杠与 /v1 后缀会被自动剥除
+OPENAI_API_KEY=sk-...                           # sub2API 平台生成的 API Key
+OPENAI_MODEL=gpt-6-astra                        # 可选覆盖（默认 gpt-6-astra）
+
+# 使用
+ccm openai            # 或：ccm gpt / ccm gpt6
+ccc openai            # 切换并启动 Claude Code
+```
+
+API Key 须绑定 sub2API 中平台为 OpenAI 的分组，`/v1/messages` 会按分组平台自动路由。全部模型槽位（Sonnet/Opus/Haiku/Subagent）统一使用 `OPENAI_MODEL`。
+
+> ⚠️ **服务条款风险**：通过 sub2API 中转订阅账号可能违反上游服务商条款，风险自负。
 
 ---
 
@@ -278,6 +302,8 @@ QWEN_API_KEY=...
 MINIMAX_API_KEY=...
 ARK_API_KEY=...
 OPENROUTER_API_KEY=...
+OPENAI_API_KEY=...
+OPENAI_BASE_URL=http://localhost:8080
 CLAUDE_API_KEY=...
 
 # 模型 ID 覆盖（可选）
@@ -288,6 +314,7 @@ QWEN_MODEL=qwen3-max-2026-01-23
 GLM_MODEL=glm-5.3[1m]
 MINIMAX_MODEL=MiniMax-M2.5
 SEED_MODEL=ark-code-latest
+OPENAI_MODEL=gpt-6-astra
 CLAUDE_MODEL=claude-sonnet-4-5-20250929
 OPUS_MODEL=claude-opus-4-6
 HAIKU_MODEL=claude-haiku-4-5-20251001

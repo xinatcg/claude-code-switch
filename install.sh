@@ -275,7 +275,7 @@ ccc() {
     echo "  ccc glm --dangerously-skip-permissions    # Launch GLM with options"
     echo ""
     echo "Available models:"
-    echo "  Official: deepseek, glm, kimi, qwen, seed|doubao, claude, minimax"
+    echo "  Official: deepseek, glm, kimi, qwen, seed|doubao, claude, minimax, openai|gpt"
     echo "  OpenRouter: open <provider>"
     echo "  Account:  <account> | claude:<account>"
     if [[ \$# -eq 0 ]]; then
@@ -306,7 +306,7 @@ ccc() {
   # Helper: known model keyword
   _is_known_model() {
     case "\$1" in
-      deepseek|ds|glm|glm5|kimi|kimi2|qwen|minimax|mm|seed|doubao|claude|sonnet|s|open)
+      deepseek|ds|glm|glm5|kimi|kimi2|qwen|minimax|mm|seed|doubao|claude|sonnet|s|open|openai|gpt|gpt6)
         return 0 ;;
       *)
         return 1 ;;
@@ -534,7 +534,7 @@ usage() {
         "  ccc claude:work                  # Switch to 'work' account and use Claude" \
         '' \
         'Available models:' \
-        '  Official: deepseek, glm, kimi, qwen, seed|doubao, claude, minimax' \
+        '  Official: deepseek, glm, kimi, qwen, seed|doubao, claude, minimax, openai|gpt' \
         '  OpenRouter: open <provider>' \
         '  Account:  <account> | claude:<account>'
 }
@@ -576,7 +576,7 @@ fi
 
 is_known_model() {
     case "$1" in
-        deepseek|ds|glm|glm5|kimi|kimi2|qwen|minimax|mm|seed|doubao|claude|sonnet|s|open)
+        deepseek|ds|glm|glm5|kimi|kimi2|qwen|minimax|mm|seed|doubao|claude|sonnet|s|open|openai|gpt|gpt6)
             return 0 ;;
         *)
             return 1 ;;
@@ -661,7 +661,7 @@ usage() {
         "  ccc claude:work                  # Switch to 'work' account and use Claude" \
         '' \
         'Available models:' \
-        '  Official: deepseek, glm, kimi, qwen, seed|doubao, claude, minimax' \
+        '  Official: deepseek, glm, kimi, qwen, seed|doubao, claude, minimax, openai|gpt' \
         '  OpenRouter: open <provider>' \
         '  Account:  <account> | claude:<account>'
 }
@@ -703,7 +703,7 @@ fi
 
 is_known_model() {
     case "$1" in
-        deepseek|ds|glm|glm5|kimi|kimi2|qwen|minimax|mm|seed|doubao|claude|sonnet|s|open)
+        deepseek|ds|glm|glm5|kimi|kimi2|qwen|minimax|mm|seed|doubao|claude|sonnet|s|open|openai|gpt|gpt6)
             return 0 ;;
         *)
             return 1 ;;
@@ -948,4 +948,7 @@ main() {
   fi
 }
 
-main "$@"
+# 直接执行时才运行 main；被 source（如测试）时仅提供函数定义
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi

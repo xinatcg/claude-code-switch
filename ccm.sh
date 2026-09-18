@@ -179,6 +179,11 @@ CLAUDE_API_KEY=your-claude-api-key
 # OpenRouter
 OPENROUTER_API_KEY=your-openrouter-api-key
 
+# OpenAI（经 sub2API 网关订阅转 API，自部署；OpenAI 官方无 Anthropic 兼容端点）
+# 网关地址填 sub2API 部署地址，默认本机 8080；模型默认 gpt-6-astra
+OPENAI_BASE_URL=http://localhost:8080
+OPENAI_API_KEY=your-openai-api-key
+
 # —— 可选：模型ID覆盖（不设置则使用下方默认）——
 DEEPSEEK_MODEL=deepseek-chat
 KIMI_MODEL=kimi-k2.5
@@ -192,6 +197,7 @@ MINIMAX_MODEL=MiniMax-M2.5
 SEED_MODEL=ark-code-latest
 STEPFUN_MODEL=step-3.5-flash
 BAILIAN_MODEL=qwen3.7-plus
+OPENAI_MODEL=gpt-6-astra
 
 EOF
         echo -e "${YELLOW}⚠️  $(t 'config_created'): $CONFIG_FILE${NC}" >&2
@@ -293,6 +299,11 @@ CLAUDE_API_KEY=your-claude-api-key
 # OpenRouter
 OPENROUTER_API_KEY=your-openrouter-api-key
 
+# OpenAI（经 sub2API 网关订阅转 API，自部署；OpenAI 官方无 Anthropic 兼容端点）
+# 网关地址填 sub2API 部署地址，默认本机 8080；模型默认 gpt-6-astra
+OPENAI_BASE_URL=http://localhost:8080
+OPENAI_API_KEY=your-openai-api-key
+
 # —— 可选：模型ID覆盖（不设置则使用下方默认）——
 DEEPSEEK_MODEL=deepseek-chat
 KIMI_MODEL=kimi-k2.5
@@ -306,6 +317,7 @@ MINIMAX_MODEL=MiniMax-M2.5
 SEED_MODEL=ark-code-latest
 STEPFUN_MODEL=step-3.5-flash
 BAILIAN_MODEL=qwen3.7-plus
+OPENAI_MODEL=gpt-6-astra
 
 EOF
     echo -e "${YELLOW}⚠️  $(t 'config_created'): $CONFIG_FILE${NC}" >&2
@@ -1916,6 +1928,7 @@ show_help() {
     echo "  minimax [global|china]  - env minimax (default: global)"
     echo "  seed [doubao|glm|deepseek|kimi] - env 豆包 Seed-Code"
     echo "  stepfun                 - env StepFun"
+    echo "  openai, gpt, gpt6       - env OpenAI via sub2API gateway (gpt-6-astra)"
     echo "  claude, sonnet, s       - env claude (official)"
     echo "  open <provider>         - env OpenRouter (run 'ccm open' for help)"
     echo ""
@@ -1950,6 +1963,7 @@ show_help() {
     echo "  eval \"\$(ccm qwen global)\"             # Qwen global (Coding Plan)"
     echo "  eval \"\$(ccm seed kimi)\"               # 豆包 Seed-Code (kimi)"
     echo "  eval \"\$(ccm open kimi)\"               # OpenRouter kimi"
+    echo "  eval \"\$(ccm openai)\"                 # OpenAI (sub2API gateway, gpt-6-astra)"
     echo ""
     echo "  ccm user glm global    # Set GLM as default (highest priority)"
     echo "  ccm user reset         # Restore env var control"
@@ -1965,6 +1979,7 @@ show_help() {
     echo "  🎯 MiniMax              - MiniMax-M2.5 (api.minimax.io / api.minimaxi.com)"
     echo "  🐪 Qwen                 - qwen3-max-2026-01-23 / qwen3-coder-plus (Coding Plan)"
     echo "  🇨🇳 GLM                 - glm-5.3 (api.z.ai / open.bigmodel.cn)"
+    echo "  🆕 OpenAI (sub2API)     - gpt-6-astra (自建 sub2API 网关，OPENAI_BASE_URL)"
     echo "  🧠 Claude Sonnet 4.5    - claude-sonnet-4-5-20250929"
 }
 
@@ -1979,6 +1994,7 @@ ensure_model_override_defaults() {
         "STEPFUN_MODEL=step-3.5-flash"
         "QWEN_MODEL=qwen3-max-2026-01-23"
         "GLM_MODEL=glm-5.3"
+        "OPENAI_MODEL=gpt-6-astra"
         "CLAUDE_MODEL=claude-sonnet-4-5-20250929"
         "OPUS_MODEL=claude-opus-4-6"
         "HAIKU_MODEL=claude-haiku-4-5-20251001"
@@ -2152,9 +2168,9 @@ emit_openrouter_exports() {
             default_opus="$model"
             default_haiku="$model"
             ;;
-        "glm"|"glm5"|"glm-5.2")
-            model="z-ai/glm-5.2"
-            small="z-ai/glm-5.2"
+        "glm"|"glm5"|"glm-5.2"|"glm-5.3")
+            model="z-ai/glm-5.3"
+            small="z-ai/glm-5.3"
             default_sonnet="$model"
             default_opus="$model"
             default_haiku="$model"
@@ -2397,6 +2413,25 @@ emit_env_exports() {
             emit_default_models "$stepfun_model" "$stepfun_model" "$stepfun_model"
             emit_subagent_model "$stepfun_model"
             ;;
+        "openai"|"gpt"|"gpt6")
+            if ! is_effectively_set "$OPENAI_API_KEY"; then
+                echo -e "${RED}❌ Please configure OPENAI_API_KEY${NC}" >&2
+                return 1
+            fi
+            # sub2API 网关地址归一化：剥尾部斜杠与 /v1 后缀（Claude Code 自行拼接 /v1/messages）
+            local oa_base="${OPENAI_BASE_URL:-http://localhost:8080}"
+            oa_base="${oa_base%/}"
+            oa_base="${oa_base%/v1}"
+            oa_base="${oa_base%/}"
+            local oa_model="${OPENAI_MODEL:-gpt-6-astra}"
+            echo "$prelude"
+            echo "export ANTHROPIC_BASE_URL='${oa_base}'"
+            echo "if [ -f \"\$HOME/.ccm_config\" ]; then . \"\$HOME/.ccm_config\" >/dev/null 2>&1; fi"
+            echo "export ANTHROPIC_AUTH_TOKEN=\"\${OPENAI_API_KEY}\""
+            echo "export ANTHROPIC_MODEL='${oa_model}'"
+            emit_default_models "$oa_model" "$oa_model" "$oa_model"
+            emit_subagent_model "$oa_model"
+            ;;
         "bailian")
             if ! is_effectively_set "$BAILIAN_API_KEY"; then
                 echo -e "${RED}❌ Please configure BAILIAN_API_KEY${NC}" >&2
@@ -2455,7 +2490,7 @@ emit_env_exports() {
             emit_subagent_model "$claude_model"
             ;;
         *)
-            echo "# $(t 'usage'): $(basename "$0") env [deepseek|kimi|qwen|glm|minimax|seed|stepfun|claude|open]" 1>&2
+            echo "# $(t 'usage'): $(basename "$0") env [deepseek|kimi|qwen|glm|minimax|seed|stepfun|openai|claude|open]" 1>&2
             return 1
             ;;
     esac
@@ -2539,6 +2574,9 @@ main() {
             ;;
         "bailian")
             emit_env_exports bailian "${2:-}"
+            ;;
+        "openai"|"gpt"|"gpt6")
+            emit_env_exports openai
             ;;
         "claude"|"sonnet"|"s")
             emit_env_exports claude
