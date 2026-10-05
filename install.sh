@@ -201,6 +201,22 @@ detect_rc_files() {
   echo "${rc_files[*]}"
 }
 
+# 按登录 shell 选择注入目标：对应 rc 存在时优先，否则退回第一个已存在的 rc
+pick_rc_target() {
+  local preferred=""
+  case "$(basename "${SHELL:-}")" in
+    zsh) preferred="$HOME/.zshrc" ;;
+    bash) preferred="$HOME/.bashrc" ;;
+  esac
+  if [[ -n "$preferred" && -f "$preferred" ]]; then
+    echo "$preferred"
+  elif [[ $# -gt 0 ]]; then
+    echo "$1"
+  else
+    echo "${preferred:-$HOME/.zshrc}"
+  fi
+}
+
 remove_existing_block() {
   local rc="$1"
   [[ -f "$rc" ]] || return 0
@@ -906,10 +922,14 @@ main() {
 
   # Optional rc injection
   if $ENABLE_RC && [[ "$MODE" != "project" ]]; then
-    local rc_files
+    local rc_files rc
     rc_files=( $(detect_rc_files) )
-    local rc_target="${rc_files[0]:-$HOME/.zshrc}"
-    remove_existing_block "$rc_target"
+    local rc_target
+    rc_target="$(pick_rc_target "${rc_files[@]}")"
+    # 清掉所有 rc 中的旧块，避免另一个 rc 残留过期函数
+    for rc in "${rc_files[@]}" "$rc_target"; do
+      remove_existing_block "$rc"
+    done
     append_function_block "$rc_target" "$data_dir/ccm.sh"
     log_info "$(t "Injected ccm/ccc functions into:" "已写入 ccm/ccc 函数到：") $rc_target"
   fi

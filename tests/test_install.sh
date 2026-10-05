@@ -293,4 +293,31 @@ test_install_does_not_execute_claude() {
     teardown
 }
 
+test_rc_target_follows_login_shell() {
+    # bash 用户同时有 .zshrc（如 SDKMAN 生成）时，应注入 .bashrc，并清掉其他 rc 里的旧块
+    new_test_home
+    touch "$TEST_HOME/.zshrc"
+    printf '%s\nold-ccm-block\n%s\n' "$BEGIN_MARK" "$END_MARK" > "$TEST_HOME/.bashrc"
+    SHELL=/bin/bash install_run --user >/dev/null 2>&1
+    assert_contains "rc 目标: bash 用户注入 .bashrc" "$(cat "$TEST_HOME/.bashrc")" "$BEGIN_MARK"
+    assert_not_contains "rc 目标: .bashrc 旧块被替换" "$(cat "$TEST_HOME/.bashrc")" "old-ccm-block"
+    assert_not_contains "rc 目标: 不注入 .zshrc" "$(cat "$TEST_HOME/.zshrc")" "$BEGIN_MARK"
+
+    # 之前误注入到 .zshrc 的块也要清掉
+    printf '%s\nstale\n%s\n' "$BEGIN_MARK" "$END_MARK" >> "$TEST_HOME/.zshrc"
+    SHELL=/bin/bash install_run --user >/dev/null 2>&1
+    assert_not_contains "rc 目标: 清理其他 rc 中的残留块" "$(cat "$TEST_HOME/.zshrc")" "$BEGIN_MARK"
+    assert_eq "rc 目标: .bashrc 只有一个块" "$(grep -cF "$BEGIN_MARK" "$TEST_HOME/.bashrc")" "1"
+    teardown
+}
+
+test_rc_target_zsh_user() {
+    new_test_home
+    touch "$TEST_HOME/.zshrc" "$TEST_HOME/.bashrc"
+    SHELL=/bin/zsh install_run --user >/dev/null 2>&1
+    assert_contains "rc 目标: zsh 用户注入 .zshrc" "$(cat "$TEST_HOME/.zshrc")" "$BEGIN_MARK"
+    assert_not_contains "rc 目标: zsh 用户不注入 .bashrc" "$(cat "$TEST_HOME/.bashrc")" "$BEGIN_MARK"
+    teardown
+}
+
 run_tests "install"
