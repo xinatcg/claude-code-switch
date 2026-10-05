@@ -280,4 +280,17 @@ test_uninstall_removes_user_install() {
     teardown
 }
 
+test_install_does_not_execute_claude() {
+    # rc 注入用的是不加引号的 heredoc，注释里的反引号会被当作命令替换执行
+    new_test_home
+    touch "$TEST_HOME/.zshrc"
+    mkdir -p "$TEST_HOME/stub-bin"
+    printf '#!/bin/sh\ntouch "%s/claude-was-run"\n' "$TEST_HOME" > "$TEST_HOME/stub-bin/claude"
+    chmod +x "$TEST_HOME/stub-bin/claude"
+    PATH="$TEST_HOME/stub-bin:$PATH" install_run --user >/dev/null 2>&1
+    if [[ ! -e "$TEST_HOME/claude-was-run" ]]; then _t_ok "user 安装: 安装过程不执行 claude"; else _t_fail "user 安装: 安装过程不应执行 claude"; fi
+    assert_contains "rc 注入块: 注释原样保留反引号" "$(cat "$TEST_HOME/.zshrc")" 'Ensure `claude` CLI exists'
+    teardown
+}
+
 run_tests "install"

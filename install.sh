@@ -363,7 +363,7 @@ ccc() {
   echo "   Base URL: \${ANTHROPIC_BASE_URL:-Default (Anthropic)}"
   echo ""
 
-  # Ensure `claude` CLI exists
+  # Ensure \`claude\` CLI exists
   if ! type -p claude >/dev/null 2>&1; then
     echo "❌ 'claude' CLI not found. Install: npm install -g @anthropic-ai/claude-code" >&2
     return 127
