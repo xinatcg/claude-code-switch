@@ -242,6 +242,17 @@ ccm current-account
 ccm delete-account work
 ```
 
+Safety on switch:
+
+- **Refreshed credentials are written back**: Claude Code rotates the refresh token on every refresh, invalidating the old one. Before switching away, `switch-account` saves the current account's latest credentials into its snapshot, so switching back never forces a re-login.
+- **Blocked while Claude Code is running**: a running process writes its own credentials back on refresh and would clobber the switch. Exit every Claude Code session for the current user (including the background daemon) first.
+- **Blocked when the current login is unsaved**: if you `/login`-ed to an account that was never saved, switching would lose it; `ccm save-account <name>` it first.
+- **Login identity is synced**: `oauthAccount` in `~/.claude.json` is updated so Claude Code shows the right email.
+
+`current-account` shows access/refresh token expiry with time remaining (once the refresh token expires you must log in again), where each credential file lives, and running Claude Code processes. `list-accounts` shows each account's email and refresh-token time remaining, flagging `EXPIRED` and expiring within 3 days.
+
+Files: `~/.ccm_accounts` (credential snapshots), `~/.ccm_accounts_meta` (per-account login identity), `~/.ccm_current_account` (current account name).
+
 ### User-Level Settings (Highest Priority)
 Write settings directly to `~/.claude/settings.json`. This overrides everything including environment variables and is useful when you have other tools (like Quotio) that also modify this file.
 

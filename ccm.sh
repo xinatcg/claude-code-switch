@@ -64,6 +64,9 @@ OS_TYPE=$(detect_os)
 CONFIG_FILE="$HOME/.ccm_config"
 ACCOUNTS_FILE="$HOME/.ccm_accounts"
 CLAUDE_CREDENTIALS_FILE="$HOME/.claude/.credentials.json"
+ACCOUNTS_META_FILE="$HOME/.ccm_accounts_meta"
+CURRENT_ACCOUNT_FILE="$HOME/.ccm_current_account"
+CLAUDE_JSON_FILE="$HOME/.claude.json"
 
 # Keychain service name (override with CCM_KEYCHAIN_SERVICE)
 KEYCHAIN_SERVICE="${CCM_KEYCHAIN_SERVICE:-Claude Code-credentials}"
@@ -1264,6 +1267,219 @@ init_accounts_file() {
     fi
 }
 
+# ---- 账号管理：JSON 工具（jq 优先，python3 兜底） -----------------------------
+
+# json_get <json> <key...>：按路径取值；字符串原样输出，其他类型输出紧凑 JSON，缺失/null 输出空
+json_get() {
+    local json="$1"; shift
+    [[ -z "$json" ]] && return 0
+    if command -v jq >/dev/null 2>&1; then
+        printf '%s' "$json" | jq -r 'getpath($ARGS.positional) // empty | if type == "string" then . else tojson end' --args "$@" 2>/dev/null
+    elif command -v python3 >/dev/null 2>&1; then
+        python3 - "$json" "$@" <<'PY' 2>/dev/null
+import json, sys
+d = json.loads(sys.argv[1])
+for k in sys.argv[2:]:
+    d = d.get(k) if isinstance(d, dict) else None
+if d is not None:
+    print(d if isinstance(d, str) else json.dumps(d, separators=(",", ":")))
+PY
+    fi
+}
+
+# json_keys <file>：按原顺序列出顶层 key
+json_keys() {
+    [[ -s "$1" ]] || return 0
+    if command -v jq >/dev/null 2>&1; then
+        jq -r 'keys_unsorted[]' "$1" 2>/dev/null
+    elif command -v python3 >/dev/null 2>&1; then
+        python3 -c 'import json,sys; [print(k) for k in json.load(open(sys.argv[1]))]' "$1" 2>/dev/null
+    fi
+}
+
+# json_file_set <file> <key> <json-value>：原子地设置顶层 key，保留文件权限与其他字段
+json_file_set() {
+    local file="$1" key="$2" value="$3"
+    local tmp="${file}.ccm_tmp.$$" src="$file" rc
+    if [[ -f "$file" ]]; then
+        cp -p "$file" "$tmp" || return 1
+    else
+        : > "$tmp" && chmod 600 "$tmp"
+    fi
+    [[ -s "$file" ]] || src=/dev/null
+    if command -v jq >/dev/null 2>&1; then
+        if [[ "$src" == /dev/null ]]; then
+            echo '{}' | jq --arg k "$key" --argjson v "$value" '.[$k] = $v' > "$tmp"
+        else
+            jq --arg k "$key" --argjson v "$value" '.[$k] = $v' "$src" > "$tmp"
+        fi
+        rc=$?
+    elif command -v python3 >/dev/null 2>&1; then
+        python3 - "$src" "$key" "$value" "$tmp" <<'PY'
+import json, sys
+src, key, value, out = sys.argv[1:5]
+try:
+    d = json.load(open(src)) if src != "/dev/null" else {}
+except ValueError:
+    d = {}
+d[key] = json.loads(value)
+with open(out, "w") as f:
+    json.dump(d, f, indent=2, ensure_ascii=False)
+    f.write("\n")
+PY
+        rc=$?
+    else
+        echo -e "${RED}❌ $(t 'install_jq_or_python')${NC}" >&2
+        rc=1
+    fi
+    if [[ $rc -ne 0 ]]; then
+        rm -f "$tmp"
+        return 1
+    fi
+    mv "$tmp" "$file"
+}
+
+# cred_field <credentials> <key>：兼容 Linux（claudeAiOauth 内层）与 macOS Keychain（完整对象）两种格式
+cred_field() {
+    local v
+    v=$(json_get "$1" claudeAiOauth "$2")
+    [[ -z "$v" ]] && v=$(json_get "$1" "$2")
+    echo "$v"
+}
+
+# ---- 账号管理：快照与身份识别 -------------------------------------------------
+
+# saved_account_creds <name>：解码已保存账号的凭证，不存在时输出空
+saved_account_creds() {
+    [[ -s "$ACCOUNTS_FILE" ]] || return 0
+    local encoded
+    encoded=$(json_get "$(cat "$ACCOUNTS_FILE")" "$1")
+    [[ -n "$encoded" ]] && printf '%s' "$encoded" | base64_decode 2>/dev/null
+}
+
+# account_meta <name> <field>：读取保存时记录的 oauthAccount 字段（emailAddress、accountUuid 等）
+account_meta() {
+    [[ -s "$ACCOUNTS_META_FILE" ]] || return 0
+    json_get "$(cat "$ACCOUNTS_META_FILE")" "$1" "$2"
+}
+
+# current_oauth_account：~/.claude.json 中 Claude Code 记录的当前登录身份
+current_oauth_account() {
+    [[ -s "$CLAUDE_JSON_FILE" ]] || return 0
+    json_get "$(cat "$CLAUDE_JSON_FILE")" oauthAccount
+}
+
+# store_account_snapshot <name> <credentials>：写入凭证快照，并记录当前登录身份
+store_account_snapshot() {
+    local name="$1" credentials="$2" oauth
+    init_accounts_file
+    json_file_set "$ACCOUNTS_FILE" "$name" "\"$(printf '%s' "$credentials" | base64_encode_nolinebreak)\"" || return 1
+    chmod 600 "$ACCOUNTS_FILE"
+    oauth=$(current_oauth_account)
+    if [[ -n "$oauth" ]]; then
+        json_file_set "$ACCOUNTS_META_FILE" "$name" "$oauth" || return 1
+        chmod 600 "$ACCOUNTS_META_FILE"
+    fi
+    echo "$name" > "$CURRENT_ACCOUNT_FILE"
+}
+
+# account_owns_creds <name> <credentials>：判断当前凭证是否属于该已保存账号
+# 续期会轮换 refresh token，所以不能只比对凭证内容：
+#   1) 内容完全一致；2) 双方都有 accountUuid 时按 uuid 判断（覆盖同账号重新登录）；
+#   3) 否则按 refreshTokenExpiresAt 判断（同一次登录的过期时间不变，兼容旧快照）
+account_owns_creds() {
+    local name="$1" current="$2" saved saved_uuid cur_uuid cur_grant
+    saved=$(saved_account_creds "$name")
+    [[ -z "$saved" ]] && return 1
+    [[ "$saved" == "$current" ]] && return 0
+    saved_uuid=$(account_meta "$name" accountUuid)
+    cur_uuid=$(json_get "$(current_oauth_account)" accountUuid)
+    if [[ -n "$saved_uuid" && -n "$cur_uuid" ]]; then
+        [[ "$saved_uuid" == "$cur_uuid" ]]
+        return
+    fi
+    cur_grant=$(cred_field "$current" refreshTokenExpiresAt)
+    [[ -n "$cur_grant" && "$(cred_field "$saved" refreshTokenExpiresAt)" == "$cur_grant" ]]
+}
+
+# resolve_current_account <credentials>：找出当前凭证对应的已保存账号名（优先上次切换/保存的账号）
+resolve_current_account() {
+    local current="$1" last="" name
+    [[ -z "$current" || ! -s "$ACCOUNTS_FILE" ]] && return 1
+    [[ -f "$CURRENT_ACCOUNT_FILE" ]] && last=$(cat "$CURRENT_ACCOUNT_FILE")
+    while IFS= read -r name; do
+        [[ -z "$name" ]] && continue
+        if account_owns_creds "$name" "$current"; then
+            echo "$name"
+            return 0
+        fi
+    done < <([[ -n "$last" ]] && echo "$last"; json_keys "$ACCOUNTS_FILE")
+    return 1
+}
+
+# ---- 账号管理：活跃进程检测 ---------------------------------------------------
+
+# list_claude_processes：列出当前用户正在运行的 Claude Code 进程（"pid comm args"）
+# CCM_PS_OVERRIDE_FILE 仅供测试注入 ps 输出
+list_claude_processes() {
+    {
+        if [[ -n "${CCM_PS_OVERRIDE_FILE:-}" ]]; then
+            cat "$CCM_PS_OVERRIDE_FILE"
+        else
+            ps -u "$(id -u)" -o pid=,comm=,args= 2>/dev/null
+        fi
+    } | awk '{
+        c = $2; sub(".*/", "", c); a = $3; sub(".*/", "", a)
+        if (c == "claude" || c == "claude.exe" || a == "claude" || a == "claude.exe") print
+    }'
+}
+
+# ensure_no_claude_running：有活跃 Claude Code 进程时拒绝切换
+# 运行中的进程续期时会把它持有的凭证写回磁盘，覆盖刚切换的账号
+ensure_no_claude_running() {
+    local procs
+    procs=$(list_claude_processes)
+    [[ -z "$procs" ]] && return 0
+    echo -e "${RED}❌ $(t 'claude_running_cannot_switch')${NC}" >&2
+    echo "$procs" | sed 's/^ *//' | cut -c1-120 | sed 's/^/   /' >&2
+    echo -e "${YELLOW}💡 $(t 'exit_claude_before_switch')${NC}" >&2
+    return 1
+}
+
+# ---- 账号管理：有效期展示 -----------------------------------------------------
+
+# format_remaining_ms <epoch-ms>：距今剩余时长，如 "24d 3h"、"5h 12m"；已过期输出 EXPIRED
+format_remaining_ms() {
+    local ms="$1"
+    if [[ -z "$ms" ]]; then
+        echo "?"
+        return 0
+    fi
+    local diff=$(( ms / 1000 - $(date +%s) ))
+    if (( diff <= 0 )); then
+        echo "EXPIRED"
+    elif (( diff >= 86400 )); then
+        echo "$((diff / 86400))d $((diff % 86400 / 3600))h"
+    elif (( diff >= 3600 )); then
+        echo "$((diff / 3600))h $((diff % 3600 / 60))m"
+    else
+        echo "$((diff / 60))m"
+    fi
+}
+
+# refresh_status <epoch-ms>：refresh token 剩余时长，附带过期/即将过期提示
+refresh_status() {
+    local ms="$1" remaining
+    remaining=$(format_remaining_ms "$ms")
+    if [[ "$remaining" == "EXPIRED" ]]; then
+        echo -e "${RED}EXPIRED — $(t 'relogin_required')${NC}"
+    elif [[ -n "$ms" ]] && (( ms / 1000 - $(date +%s) < 3 * 86400 )); then
+        echo -e "${YELLOW}${remaining} ⚠️  $(t 'refresh_expiring_soon')${NC}"
+    else
+        echo "$remaining"
+    fi
+}
+
 # 保存当前账号
 save_account() {
     # 检查是否需要禁用颜色（用于 eval）
@@ -1287,63 +1503,21 @@ save_account() {
         return 1
     fi
 
-    # 初始化账号文件
-    init_accounts_file
-
-    # 使用纯 Bash 解析和保存（不依赖 jq）
-    local temp_file=$(mktemp)
-    local existing_accounts=""
-
-    if [[ -f "$ACCOUNTS_FILE" ]]; then
-        existing_accounts=$(cat "$ACCOUNTS_FILE")
+    if ! store_account_snapshot "$account_name" "$credentials"; then
+        echo -e "${RED}❌ $(t 'failed_to_save_account'): $account_name${NC}" >&2
+        return 1
     fi
 
-    # 简单的 JSON 更新：如果是空文件或只有 {}，直接写入
-    if [[ "$existing_accounts" == "{}" || -z "$existing_accounts" ]]; then
-        local encoded_creds=$(echo "$credentials" | base64_encode_nolinebreak)
-        cat > "$ACCOUNTS_FILE" << EOF
-{
-  "$account_name": "$encoded_creds"
-}
-EOF
-    else
-        # 读取现有账号，添加新账号
-        # 检查账号是否已存在
-        if grep -q "\"$account_name\":" "$ACCOUNTS_FILE"; then
-            # 更新现有账号
-            local encoded_creds=$(echo "$credentials" | base64_encode_nolinebreak)
-            # 使用 sed 替换现有条目（跨平台兼容）
-            if [[ "$OS_TYPE" == "macos" ]]; then
-                sed -i '' "s/\"$account_name\": *\"[^\"]*\"/\"$account_name\": \"$encoded_creds\"/" "$ACCOUNTS_FILE"
-            else
-                sed -i "s/\"$account_name\": *\"[^\"]*\"/\"$account_name\": \"$encoded_creds\"/" "$ACCOUNTS_FILE"
-            fi
-        else
-            # 添加新账号
-            local encoded_creds=$(echo "$credentials" | base64_encode_nolinebreak)
-            # 移除最后的 } 并在上一行末尾添加逗号
-            if [[ "$OS_TYPE" == "macos" ]]; then
-                sed '$d' "$ACCOUNTS_FILE" | sed '$s/$/,/' > "$temp_file"
-            else
-                sed '$d' "$ACCOUNTS_FILE" | sed '$s/$/,/' > "$temp_file"
-            fi
-            echo "  \"$account_name\": \"$encoded_creds\"" >> "$temp_file"
-            echo "}" >> "$temp_file"
-            mv "$temp_file" "$ACCOUNTS_FILE"
-        fi
-    fi
-
-    chmod 600 "$ACCOUNTS_FILE"
-
-    # 提取订阅类型用于显示
-    local subscription_type=$(echo "$credentials" | grep -o '"subscriptionType":"[^"]*"' | cut -d'"' -f4)
+    local subscription_type email
+    subscription_type=$(cred_field "$credentials" subscriptionType)
+    email=$(account_meta "$account_name" emailAddress)
     echo -e "${GREEN}✅ $(t 'account_saved'): $account_name${NC}"
-    echo -e "   $(t 'subscription_type'): ${subscription_type:-Unknown}"
-
-    rm -f "$temp_file"
+    echo "   $(t 'subscription_type'): ${subscription_type:-Unknown}"
+    [[ -n "$email" ]] && echo "   $(t 'email'): $email"
+    return 0
 }
 
-# 切换到指定账号
+# 切换到已保存的账号
 switch_account() {
     # 检查是否需要禁用颜色（用于 eval）
     if [[ "$NO_COLOR" == "true" ]]; then
@@ -1363,31 +1537,57 @@ switch_account() {
         return 1
     fi
 
-    # 从文件中读取账号凭证
-    local encoded_creds=$(grep -o "\"$account_name\": *\"[^\"]*\"" "$ACCOUNTS_FILE" | cut -d'"' -f4)
-
-    if [[ -z "$encoded_creds" ]]; then
+    local credentials
+    credentials=$(saved_account_creds "$account_name")
+    if [[ -z "$credentials" ]]; then
         echo -e "${RED}❌ $(t 'account_not_found'): $account_name${NC}" >&2
         echo -e "${YELLOW}💡 $(t 'use_list_accounts')${NC}" >&2
         return 1
     fi
 
-    # 解码凭证
-    local credentials=$(echo "$encoded_creds" | base64_decode)
+    ensure_no_claude_running || return 1
 
-    # 写入 Keychain
-    if write_keychain_credentials "$credentials"; then
-        echo -e "${GREEN}✅ $(t 'account_switched'): $account_name${NC}"
-        echo -e "${YELLOW}⚠️  $(t 'please_restart_claude_code')${NC}"
-    else
+    # 切走前把当前账号续期后的凭证写回它的快照，否则快照里的 refresh token 已被轮换作废
+    local current owner
+    current=$(read_keychain_credentials 2>/dev/null)
+    if [[ -n "$current" ]]; then
+        if ! owner=$(resolve_current_account "$current"); then
+            local email
+            email=$(json_get "$(current_oauth_account)" emailAddress)
+            echo -e "${RED}❌ $(t 'current_login_not_saved')${email:+: $email}${NC}" >&2
+            echo -e "${YELLOW}💡 $(t 'save_current_first'): ccm save-account <name>${NC}" >&2
+            return 1
+        fi
+        if ! store_account_snapshot "$owner" "$current"; then
+            echo -e "${RED}❌ $(t 'failed_to_save_account'): $owner${NC}" >&2
+            return 1
+        fi
+        echo -e "${BLUE}🔄 $(t 'synced_back_credentials'): $owner${NC}"
+        # 目标就是当前账号时，用刚写回的最新凭证
+        [[ "$owner" == "$account_name" ]] && credentials=$(saved_account_creds "$account_name")
+    fi
+
+    if ! write_keychain_credentials "$credentials"; then
         echo -e "${RED}❌ $(t 'failed_to_switch_account')${NC}" >&2
         return 1
     fi
+
+    # 同步 ~/.claude.json 的登录身份，避免 Claude Code 显示旧账号
+    local oauth
+    oauth=$(json_get "$(cat "$ACCOUNTS_META_FILE" 2>/dev/null)" "$account_name")
+    if [[ -n "$oauth" && -f "$CLAUDE_JSON_FILE" ]]; then
+        json_file_set "$CLAUDE_JSON_FILE" oauthAccount "$oauth" || \
+            echo -e "${YELLOW}⚠️  $(t 'failed_to_update_claude_json')${NC}" >&2
+    fi
+    echo "$account_name" > "$CURRENT_ACCOUNT_FILE"
+
+    echo -e "${GREEN}✅ $(t 'account_switched'): $account_name${NC}"
+    echo -e "${YELLOW}⚠️  $(t 'please_restart_claude_code')${NC}"
 }
 
 # 列出所有已保存的账号
 list_accounts() {
-    if [[ ! -f "$ACCOUNTS_FILE" ]]; then
+    if [[ ! -s "$ACCOUNTS_FILE" ]]; then
         echo -e "${YELLOW}$(t 'no_accounts_saved')${NC}"
         echo -e "${YELLOW}💡 $(t 'use_save_account')${NC}"
         return 0
@@ -1395,67 +1595,20 @@ list_accounts() {
 
     echo -e "${BLUE}📋 $(t 'saved_accounts'):${NC}"
 
-    # 读取并解析账号列表
-    local current_creds=$(read_keychain_credentials)
+    local current active name creds subscription email
+    current=$(read_keychain_credentials 2>/dev/null)
+    active=$(resolve_current_account "$current") || active=""
 
-    # 使用 jq 或 Python 解析 JSON（处理多行 base64 值）
-    if command -v jq >/dev/null 2>&1; then
-        jq -r 'to_entries[] | "\(.key)|\(.value)"' "$ACCOUNTS_FILE" | while IFS='|' read -r name encoded; do
-            # 解码并提取信息
-            local creds=$(echo "$encoded" | base64_decode 2>/dev/null)
-            local subscription=$(echo "$creds" | grep -o '"subscriptionType":"[^"]*"' | cut -d'"' -f4)
-            local expires=$(echo "$creds" | grep -o '"expiresAt":[0-9]*' | cut -d':' -f2)
-
-            # 检查是否是当前账号
-            local is_current=""
-            if [[ "$creds" == "$current_creds" ]]; then
-                is_current=" ${GREEN}✅ ($(t 'active'))${NC}"
-            fi
-
-            # 格式化过期时间
-            local expires_str=""
-            if [[ -n "$expires" ]]; then
-                expires_str=$(format_epoch_ms "$expires")
-            fi
-
-            echo -e "   - ${YELLOW}$name${NC} (${subscription:-Unknown}${expires_str:+, expires: $expires_str})$is_current"
-        done
-    elif command -v python3 >/dev/null 2>&1; then
-        python3 -c "
-import json
-with open('$ACCOUNTS_FILE') as f:
-    data = json.load(f)
-    for name, encoded in data.items():
-        print(f'{name}|{encoded}')
-" | while IFS='|' read -r name encoded; do
-            # 解码并提取信息
-            local creds=$(echo "$encoded" | base64_decode 2>/dev/null)
-            local subscription=$(echo "$creds" | grep -o '"subscriptionType":"[^"]*"' | cut -d'"' -f4)
-            local expires=$(echo "$creds" | grep -o '"expiresAt":[0-9]*' | cut -d':' -f2)
-
-            # 检查是否是当前账号
-            local is_current=""
-            if [[ "$creds" == "$current_creds" ]]; then
-                is_current=" ${GREEN}✅ ($(t 'active'))${NC}"
-            fi
-
-            # 格式化过期时间
-            local expires_str=""
-            if [[ -n "$expires" ]]; then
-                expires_str=$(format_epoch_ms "$expires")
-            fi
-
-            echo -e "   - ${YELLOW}$name${NC} (${subscription:-Unknown}${expires_str:+, expires: $expires_str})$is_current"
-        done
-    else
-        # 降级方案：仅支持单行 base64 值
-        echo -e "${YELLOW}⚠️  $(t 'install_jq_or_python')${NC}"
-        grep --color=never -o '"[^"]*": *"[^"]*"' "$ACCOUNTS_FILE" | while IFS=': ' read -r name encoded; do
-            name=$(echo "$name" | tr -d '"')
-            encoded=$(echo "$encoded" | tr -d '"')
-            echo -e "   - ${YELLOW}$name${NC}"
-        done
-    fi
+    while IFS= read -r name; do
+        [[ -z "$name" ]] && continue
+        creds=$(saved_account_creds "$name")
+        subscription=$(cred_field "$creds" subscriptionType)
+        email=$(account_meta "$name" emailAddress)
+        local line="   - ${YELLOW}$name${NC} (${subscription:-Unknown}${email:+, $email})"
+        line+="  refresh: $(refresh_status "$(cred_field "$creds" refreshTokenExpiresAt)")"
+        [[ "$name" == "$active" ]] && line+=" ${GREEN}✅ ($(t 'active'))${NC}"
+        echo -e "$line"
+    done < <(json_keys "$ACCOUNTS_FILE")
 }
 
 # 删除已保存的账号
@@ -1508,39 +1661,48 @@ get_current_account() {
         return 1
     fi
 
-    # 提取信息
-    local subscription=$(echo "$credentials" | grep -o '"subscriptionType":"[^"]*"' | cut -d'"' -f4)
-    local expires=$(echo "$credentials" | grep -o '"expiresAt":[0-9]*' | cut -d':' -f2)
-    local access_token=$(echo "$credentials" | grep -o '"accessToken":"[^"]*"' | cut -d'"' -f4)
-
-    # 格式化过期时间
-    local expires_str=""
-    if [[ -n "$expires" ]]; then
-        expires_str=$(format_epoch_ms "$expires")
-    fi
-
-    # 查找账号名称
-    local account_name="Unknown"
-    if [[ -f "$ACCOUNTS_FILE" ]]; then
-        while IFS=': ' read -r name encoded; do
-            name=$(echo "$name" | tr -d '"')
-            encoded=$(echo "$encoded" | tr -d '"')
-            local saved_creds=$(echo "$encoded" | base64_decode 2>/dev/null)
-            if [[ "$saved_creds" == "$credentials" ]]; then
-                account_name="$name"
-                break
-            fi
-        done < <(grep --color=never -o '"[^"]*": *"[^"]*"' "$ACCOUNTS_FILE")
-    fi
+    local subscription expires rt_expires access_token account_name email procs
+    subscription=$(cred_field "$credentials" subscriptionType)
+    expires=$(cred_field "$credentials" expiresAt)
+    rt_expires=$(cred_field "$credentials" refreshTokenExpiresAt)
+    access_token=$(cred_field "$credentials" accessToken)
+    email=$(json_get "$(current_oauth_account)" emailAddress)
+    account_name=$(resolve_current_account "$credentials") || \
+        account_name="Unknown ($(t 'not_saved_hint'): ccm save-account <name>)"
 
     echo -e "${BLUE}📊 $(t 'current_account_info'):${NC}"
     echo "   $(t 'account_name'): ${account_name}"
+    [[ -n "$email" ]] && echo "   $(t 'email'): ${email}"
     echo "   $(t 'subscription_type'): ${subscription:-Unknown}"
-    if [[ -n "$expires_str" ]]; then
-        echo "   $(t 'token_expires'): ${expires_str}"
+    if [[ -n "$expires" ]]; then
+        echo "   $(t 'token_expires'): $(format_epoch_ms "$expires") ($(format_remaining_ms "$expires"), $(t 'auto_refreshed'))"
+    fi
+    if [[ -n "$rt_expires" ]]; then
+        echo -e "   $(t 'refresh_token_expires'): $(format_epoch_ms "$rt_expires") ($(refresh_status "$rt_expires"))"
     fi
     echo -n "   $(t 'access_token'): "
     mask_token "$access_token"
+
+    echo ""
+    echo -e "${BLUE}📁 $(t 'credential_locations'):${NC}"
+    if [[ "$OS_TYPE" == "macos" ]]; then
+        echo "   $(t 'credentials'): macOS Keychain (service: $KEYCHAIN_SERVICE)"
+    else
+        echo "   $(t 'credentials'): $CLAUDE_CREDENTIALS_FILE"
+    fi
+    echo "   $(t 'login_identity'): $CLAUDE_JSON_FILE (oauthAccount)"
+    echo "   $(t 'saved_snapshots'): $ACCOUNTS_FILE"
+    echo "   $(t 'saved_identities'): $ACCOUNTS_META_FILE"
+    echo "   $(t 'current_account_marker'): $CURRENT_ACCOUNT_FILE"
+
+    echo ""
+    procs=$(list_claude_processes)
+    if [[ -z "$procs" ]]; then
+        echo -e "${GREEN}🟢 Claude processes: 0 — $(t 'switch_allowed')${NC}"
+    else
+        echo -e "${YELLOW}🟡 Claude processes: $(echo "$procs" | wc -l | tr -d ' ') — $(t 'switch_blocked')${NC}"
+        echo "$procs" | sed 's/^ *//' | cut -c1-120 | sed 's/^/   /'
+    fi
 }
 
 # 显示当前状态（脱敏）
@@ -1944,10 +2106,10 @@ show_help() {
     echo ""
     echo -e "${YELLOW}Claude Pro Account Management:${NC}"
     echo "  save-account <name>     - Save current Claude Pro account"
-    echo "  switch-account <name>   - Switch to saved account"
+    echo "  switch-account <name>   - Switch to saved account (requires all Claude Code sessions to be exited)"
     echo "  list-accounts           - List all saved accounts"
     echo "  delete-account <name>   - Delete saved account"
-    echo "  current-account         - Show current account info"
+    echo "  current-account         - Show current account, token expiry, credential locations, running sessions"
     echo "  claude:account         - Switch account and use Claude (Sonnet)"
     echo ""
     echo -e "${YELLOW}$(t 'tool_options'):${NC}"

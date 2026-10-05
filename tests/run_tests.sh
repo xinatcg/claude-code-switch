@@ -24,7 +24,7 @@ for f in ccm.sh ccm ccc install.sh uninstall.sh quick-install.sh; do
 done
 
 # 测试套件
-for suite in test_providers.sh test_install.sh; do
+for suite in test_providers.sh test_install.sh test_accounts.sh; do
     echo ""
     echo "================================================================"
     bash "$TESTS_DIR/$suite" || TOTAL_RC=1
