@@ -1,5 +1,19 @@
 # Changelog
 
+## [2.7.0](https://github.com/xinatcg/claude-code-switch/compare/v2.6.0...v2.7.0) (2026-10-06)
+
+
+### Features
+
+* **account:** switch-account 不再强制退出会话，富信息展示与覆盖检测 ([1c54dd3](https://github.com/xinatcg/claude-code-switch/commit/1c54dd30c5348db2cdce3f15f64c9d23d541bf7a))
+* **account:** 切换前回写续期凭证、活跃会话拦截与 token 有效期展示 ([be1e74f](https://github.com/xinatcg/claude-code-switch/commit/be1e74f1f52c4a0dfb45b015f91c14a233acda74))
+
+
+### Bug Fixes
+
+* **install:** rc 注入按登录 shell 选目标，并清理其他 rc 中的残留块 ([8de5ac0](https://github.com/xinatcg/claude-code-switch/commit/8de5ac0ac3c2149f1e983f57bd37bde0f475c58c))
+* **install:** rc 注入注释中的反引号被当作命令执行，安装时会启动 claude ([f9dfb7c](https://github.com/xinatcg/claude-code-switch/commit/f9dfb7cba60712461c69fd0682d243d9413eb69c))
+
 ## [2.6.0](https://github.com/xinatcg/claude-code-switch/compare/v2.5.0...v2.6.0) (2026-09-18)
 
 
