@@ -1417,7 +1417,7 @@ resolve_current_account() {
     return 1
 }
 
-# ---- 账号管理：活跃进程检测 ---------------------------------------------------
+# ---- 账号管理：活跃会话检测与展示 ---------------------------------------------
 
 # list_claude_processes：列出当前用户正在运行的 Claude Code 进程（"pid comm args"）
 # CCM_PS_OVERRIDE_FILE 仅供测试注入 ps 输出
@@ -1434,16 +1434,146 @@ list_claude_processes() {
     }'
 }
 
-# ensure_no_claude_running：有活跃 Claude Code 进程时拒绝切换
-# 运行中的进程续期时会把它持有的凭证写回磁盘，覆盖刚切换的账号
-ensure_no_claude_running() {
+# session_meta <pid>：读 ~/.claude/sessions/<pid>.json（Claude Code 自己维护的进程元数据）
+# 输出 "name<US>kind<US>startedAt<US>cwd<US>sessionId"（US=Unit Separator，非 IFS 空白符，
+# 这样空字段不会在 read 折叠）；startedAt 非数值时按 0 处理；无元数据时输出为空
+session_meta() {
+    local pid="$1"
+    [[ -s "$HOME/.claude/sessions/$pid.json" ]] || return 0
+    if command -v jq >/dev/null 2>&1; then
+        jq -r '[.name // "", .kind // "",
+                (if (.startedAt | type) == "number" then .startedAt else 0 end),
+                .cwd // "", .sessionId // ""]
+               | map(tostring) | join("\u001f")' \
+            "$HOME/.claude/sessions/$pid.json" 2>/dev/null
+    elif command -v python3 >/dev/null 2>&1; then
+        python3 - "$HOME/.claude/sessions/$pid.json" <<'PY' 2>/dev/null
+import json, sys
+try:
+    d = json.load(open(sys.argv[1]))
+except Exception:
+    sys.exit(0)
+started = d.get("startedAt")
+fields = [d.get("name") or "", d.get("kind") or "",
+          started if isinstance(started, (int, float)) else 0,
+          d.get("cwd") or "", d.get("sessionId") or ""]
+print("\x1f".join(str(f) for f in fields))
+PY
+    fi
+}
+
+# CCM_PPID_MAP：父进程快照（"pid ppid" 行，describe 时一次性加载，查询纯 bash 不再 fork）
+CCM_PPID_MAP=""
+# CCM_PPID_MAP_FILE 仅供测试注入 "pid ppid" 映射
+ppid_map_load() {
+    if [[ -n "${CCM_PPID_MAP_FILE:-}" ]]; then
+        CCM_PPID_MAP=$(cat "$CCM_PPID_MAP_FILE" 2>/dev/null)
+    else
+        # 必须带 -u：裸 ps 只列同会话进程，看不到其他终端/tmux 窗口里的 claude
+        CCM_PPID_MAP=$(ps -u "$(id -u)" -o pid=,ppid= 2>/dev/null)
+    fi
+}
+
+# ppid_of <pid>：从 CCM_PPID_MAP 查父进程 PID
+ppid_of() {
+    local a b
+    while read -r a b; do
+        [[ "$a" == "$1" ]] && { echo "$b"; return 0; }
+    done <<<"$CCM_PPID_MAP"
+    return 1
+}
+
+# tmux_panes_list：输出 "session|window|pane_pid|window_name" 行
+# CCM_TMUX_OVERRIDE_FILE 仅供测试注入；未安装 tmux 时输出为空
+tmux_panes_list() {
+    if [[ -n "${CCM_TMUX_OVERRIDE_FILE:-}" ]]; then
+        cat "$CCM_TMUX_OVERRIDE_FILE" 2>/dev/null
+    elif command -v tmux >/dev/null 2>&1; then
+        tmux list-panes -a -F '#{session_name}|#{window_index}|#{pane_pid}|#{window_name}' 2>/dev/null
+    fi
+}
+
+# tmux_location_of <pid> <panes>：沿父进程链上溯（最多 6 层）找 tmux pane
+# 命中时输出 "session:window(window_name)"
+tmux_location_of() {
+    local pid="$1" panes="$2" cur pane sess win wname loc
+    cur="$pid"
+    for _ in 1 2 3 4 5 6; do
+        cur=$(ppid_of "$cur")
+        [[ -z "$cur" || "$cur" == "0" || "$cur" == "1" ]] && return 1
+        pane=$(awk -F'|' -v p="$cur" '$3 == p { print; exit }' <<<"$panes")
+        [[ -z "$pane" ]] && continue
+        IFS='|' read -r sess win _pane_pid wname <<<"$pane"
+        loc="$sess:$win"
+        [[ -n "$wname" ]] && loc+="($wname)"
+        echo "$loc"
+        return 0
+    done
+    return 1
+}
+
+# humanize_age_ms <ms>：把时长毫秒渲染成 12m / 3h / 2d5h 这类短格式
+humanize_age_ms() {
+    local ms="$1" minutes
+    (( ms < 0 )) && ms=0
+    minutes=$(( ms / 60000 ))
+    if (( minutes < 60 )); then
+        echo "${minutes}m"
+    elif (( minutes < 1440 )); then
+        echo "$(( minutes / 60 ))h"
+    else
+        echo "$(( minutes / 1440 ))d$(( (minutes % 1440) / 60 ))h"
+    fi
+}
+
+# describe_claude_sessions <procs>：把 list_claude_processes 的输出渲染成可定位的会话信息
+# 有元数据的进程显示：名称、工作目录、tmux 窗口、运行时长、sessionId 短码；
+# 无元数据的 bg-pty-host / bg-spare 辅助进程只聚合计数；其余退化为 PID + 命令行
+describe_claude_sessions() {
+    local procs="$1"
+    local now_ms panes pid comm args meta name kind started cwd sid age loc row helpers=0
+    now_ms=$(( $(date +%s) * 1000 ))
+    panes=$(tmux_panes_list)
+    ppid_map_load
+    while read -r pid comm args; do
+        [[ -z "${pid:-}" ]] && continue
+        meta=$(session_meta "$pid")
+        name=""; kind=""; started=0; cwd=""; sid=""; age=""; loc=""
+        [[ -n "$meta" ]] && IFS=$'\x1f' read -r name kind started cwd sid <<<"$meta"
+        if [[ -z "$sid" ]]; then
+            if [[ "$args" == *bg-pty-host* || "$args" == *bg-spare* ]]; then
+                helpers=$(( helpers + 1 ))
+            else
+                echo "   PID $pid  ${args:0:100}"
+            fi
+            continue
+        fi
+        [[ "$kind" == "bg" && -n "$name" ]] && name="[bg] $name"
+        # 替换串里的 ~ 要加引号，否则会被再度展开成 $HOME
+        [[ -n "$cwd" ]] && cwd="${cwd/#$HOME/\~}"
+        [[ "$started" =~ ^[0-9]+$ && "$started" -gt 0 ]] && \
+            age=$(humanize_age_ms "$(( now_ms - started ))")
+        loc=$(tmux_location_of "$pid" "$panes") || loc=""
+        row="   PID $pid  ${name:--}  ${cwd:--}"
+        if [[ -n "$loc" ]]; then row+="  tmux:$loc"; else row+="  -"; fi
+        row+="  ${age:--}  ${sid:0:8}"
+        echo "$row"
+    done <<<"$procs"
+    if (( helpers > 0 )); then
+        echo "   (+ $helpers $(t 'bg_helper_processes'))"
+    fi
+    return 0
+}
+
+# warn_claude_running：有活跃 Claude Code 进程时提示但不拦截
+# 运行中的会话继续使用旧账号；旧会话续期写回的凭证可能覆盖新账号（current-account 有覆盖检测）
+warn_claude_running() {
     local procs
     procs=$(list_claude_processes)
     [[ -z "$procs" ]] && return 0
-    echo -e "${RED}❌ $(t 'claude_running_cannot_switch')${NC}" >&2
-    echo "$procs" | sed 's/^ *//' | cut -c1-120 | sed 's/^/   /' >&2
-    echo -e "${YELLOW}💡 $(t 'exit_claude_before_switch')${NC}" >&2
-    return 1
+    echo -e "${YELLOW}⚠️  $(t 'claude_running_switch_warning')${NC}" >&2
+    describe_claude_sessions "$procs" >&2
+    return 0
 }
 
 # ---- 账号管理：有效期展示 -----------------------------------------------------
@@ -1545,8 +1675,6 @@ switch_account() {
         return 1
     fi
 
-    ensure_no_claude_running || return 1
-
     # 切走前把当前账号续期后的凭证写回它的快照，否则快照里的 refresh token 已被轮换作废
     local current owner
     current=$(read_keychain_credentials 2>/dev/null)
@@ -1582,6 +1710,8 @@ switch_account() {
     echo "$account_name" > "$CURRENT_ACCOUNT_FILE"
 
     echo -e "${GREEN}✅ $(t 'account_switched'): $account_name${NC}"
+    # 切换已成功，此时才提示运行中会话的状态（避免切换中途失败时误导）
+    warn_claude_running
     echo -e "${YELLOW}⚠️  $(t 'please_restart_claude_code')${NC}"
 }
 
@@ -1695,13 +1825,30 @@ get_current_account() {
     echo "   $(t 'saved_identities'): $ACCOUNTS_META_FILE"
     echo "   $(t 'current_account_marker'): $CURRENT_ACCOUNT_FILE"
 
+    # 覆盖检测：磁盘凭证与上次切换账号的快照 grant 不一致时提醒
+    # （运行中的旧会话续期会把它的凭证写回磁盘，或用户手动登录过）。
+    # 不能改用 account_owns_creds：它比对的 uuid 取自 ~/.claude.json，切换后已指向新账号，
+    # 旧会话覆盖磁盘凭证后 uuid 依旧匹配新账号，无法识破；而 refresh token 每次续期都轮换、
+    # 仅 refreshTokenExpiresAt（grant 过期时间）在同一次登录内不变，故以它判别。
+    local recorded saved_exp cur_exp
+    if [[ -f "$CURRENT_ACCOUNT_FILE" ]]; then
+        recorded=$(cat "$CURRENT_ACCOUNT_FILE" 2>/dev/null)
+        saved_exp=$(cred_field "$(saved_account_creds "$recorded" 2>/dev/null)" refreshTokenExpiresAt)
+        cur_exp=$(cred_field "$credentials" refreshTokenExpiresAt)
+        if [[ -n "$saved_exp" && -n "$cur_exp" && "$saved_exp" != "$cur_exp" ]]; then
+            echo ""
+            echo -e "${YELLOW}⚠️  $(t 'creds_mismatch_warning'): '$recorded'${NC}"
+            echo -e "${YELLOW}   $(t 'creds_mismatch_hint'): ccm switch-account $recorded${NC}"
+        fi
+    fi
+
     echo ""
     procs=$(list_claude_processes)
     if [[ -z "$procs" ]]; then
         echo -e "${GREEN}🟢 Claude processes: 0 — $(t 'switch_allowed')${NC}"
     else
-        echo -e "${YELLOW}🟡 Claude processes: $(echo "$procs" | wc -l | tr -d ' ') — $(t 'switch_blocked')${NC}"
-        echo "$procs" | sed 's/^ *//' | cut -c1-120 | sed 's/^/   /'
+        echo -e "${YELLOW}🟡 Claude processes: $(echo "$procs" | wc -l | tr -d ' ') — $(t 'sessions_keep_old_account')${NC}"
+        describe_claude_sessions "$procs"
     fi
 }
 
@@ -2106,7 +2253,7 @@ show_help() {
     echo ""
     echo -e "${YELLOW}Claude Pro Account Management:${NC}"
     echo "  save-account <name>     - Save current Claude Pro account"
-    echo "  switch-account <name>   - Switch to saved account (requires all Claude Code sessions to be exited)"
+    echo "  switch-account <name>   - Switch to saved account (running sessions keep the old account)"
     echo "  list-accounts           - List all saved accounts"
     echo "  delete-account <name>   - Delete saved account"
     echo "  current-account         - Show current account, token expiry, credential locations, running sessions"

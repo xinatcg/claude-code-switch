@@ -245,11 +245,11 @@ ccm delete-account work
 Safety on switch:
 
 - **Refreshed credentials are written back**: Claude Code rotates the refresh token on every refresh, invalidating the old one. Before switching away, `switch-account` saves the current account's latest credentials into its snapshot, so switching back never forces a re-login.
-- **Blocked while Claude Code is running**: a running process writes its own credentials back on refresh and would clobber the switch. Exit every Claude Code session for the current user (including the background daemon) first.
+- **No forced exit while Claude Code is running**: switching proceeds even with sessions open. Running sessions keep the old account (credentials are read at startup); newly started sessions use the switched account. Each running session is listed with its name, working directory, tmux window and session id so you can locate it. Caveat: if an old session refreshes its token afterwards, it writes its own credentials back to disk; `ccm current-account` detects this mismatch and tells you to re-run `ccm switch-account <name>`.
 - **Blocked when the current login is unsaved**: if you `/login`-ed to an account that was never saved, switching would lose it; `ccm save-account <name>` it first.
 - **Login identity is synced**: `oauthAccount` in `~/.claude.json` is updated so Claude Code shows the right email.
 
-`current-account` shows access/refresh token expiry with time remaining (once the refresh token expires you must log in again), where each credential file lives, and running Claude Code processes. `list-accounts` shows each account's email and refresh-token time remaining, flagging `EXPIRED` and expiring within 3 days.
+`current-account` shows access/refresh token expiry with time remaining (once the refresh token expires you must log in again), where each credential file lives, and running Claude Code sessions — each with its name, working directory, tmux window, uptime and session id — plus a warning if the on-disk credentials were overwritten by an old session. `list-accounts` shows each account's email and refresh-token time remaining, flagging `EXPIRED` and expiring within 3 days.
 
 Files: `~/.ccm_accounts` (credential snapshots), `~/.ccm_accounts_meta` (per-account login identity), `~/.ccm_current_account` (current account name).
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Claude 账号管理测试：切换前回写轮换后的凭证、活跃进程拦截、身份校验、有效期展示
+# Claude 账号管理测试：切换前回写轮换后的凭证、活跃会话警告与富信息展示、身份校验、有效期展示、覆盖检测
 # 运行：bash tests/test_accounts.sh
 set -u
 
@@ -12,6 +12,8 @@ source "$TESTS_DIR/lib/assertions.sh"
 # ---- 测试基建 -------------------------------------------------------------
 TEST_HOME=""
 PS_FILE=""
+PPID_FILE=""
+TMUX_FILE=""
 NOW_MS=$(( $(date +%s) * 1000 ))
 DAY_MS=86400000
 
@@ -22,6 +24,8 @@ new_test_home() {
     # 默认无活跃 Claude 进程
     PS_FILE="$TEST_HOME/ps.txt"
     : > "$PS_FILE"
+    PPID_FILE=""
+    TMUX_FILE=""
 }
 
 teardown() {
@@ -53,7 +57,10 @@ current_rt() { jq -r '.claudeAiOauth.refreshToken' "$TEST_HOME/.claude/.credenti
 saved_rt() { jq -r --arg n "$1" '.[$n]' "$TEST_HOME/.ccm_accounts" | base64 -d | jq -r '.refreshToken'; }
 
 ccm_run() {
-    OUT="$(HOME="$TEST_HOME" CCM_PS_OVERRIDE_FILE="$PS_FILE" bash "$CCM_SH" "$@" 2>/tmp/ccm_test_stderr.$$)"
+    local -a env=(HOME="$TEST_HOME" CCM_PS_OVERRIDE_FILE="$PS_FILE")
+    [[ -n "$PPID_FILE" ]] && env+=("CCM_PPID_MAP_FILE=$PPID_FILE")
+    [[ -n "$TMUX_FILE" ]] && env+=("CCM_TMUX_OVERRIDE_FILE=$TMUX_FILE")
+    OUT="$(env "${env[@]}" bash "$CCM_SH" "$@" 2>/tmp/ccm_test_stderr.$$)"
     RC=$?
     ERR="$(cat /tmp/ccm_test_stderr.$$ 2>/dev/null)"
     rm -f /tmp/ccm_test_stderr.$$
@@ -113,22 +120,24 @@ test_switch_updates_oauth_account_in_claude_json() {
     teardown
 }
 
-test_switch_blocked_when_claude_running() {
+test_switch_succeeds_when_claude_running() {
     setup_two_accounts
     echo "4242 claude claude --resume" > "$PS_FILE"
     ccm_run switch-account b
-    assert_rc_nonzero "switch: 有活跃 Claude 进程时拒绝"
-    assert_contains "switch: 提示中列出进程 PID" "$ERR" "4242"
-    assert_eq "switch: 拒绝时凭证不变" "$(current_rt)" "rt-a1/+x"
+    assert_rc "switch: 有活跃 Claude 进程时仍可切换" 0
+    assert_contains "switch: 警告中列出进程 PID" "$ERR" "4242"
+    assert_eq "switch: 凭证已切换到 b" "$(current_rt)" "rt-b1/+x"
+    assert_eq "switch: 记录当前账号为 b" "$(cat "$TEST_HOME/.ccm_current_account")" "b"
     teardown
 }
 
-test_claude_account_shortcut_blocked_when_running() {
+test_claude_account_shortcut_succeeds_when_running() {
     setup_two_accounts
     echo "4243 node claude" > "$PS_FILE"
     ccm_run claude:b
-    assert_rc_nonzero "claude:<account>: 有活跃 Claude 进程时拒绝"
-    assert_not_contains "claude:<account>: 拒绝时不输出 export" "$OUT" "export ANTHROPIC"
+    assert_rc "claude:<account>: 有活跃 Claude 进程时仍可切换" 0
+    assert_contains "claude:<account>: 正常输出 export" "$OUT" "export ANTHROPIC"
+    assert_eq "claude:<account>: 凭证已切换到 b" "$(current_rt)" "rt-b1/+x"
     teardown
 }
 
@@ -162,6 +171,97 @@ test_legacy_snapshot_matched_by_grant() {
     ccm_run switch-account b
     assert_rc "legacy: 无状态文件时按 grant 匹配后允许切换" 0
     assert_eq "legacy: 回写到匹配的快照 a" "$(saved_rt a)" "rt-a2/+x"
+    teardown
+}
+
+test_current_account_warns_on_clobbered_creds() {
+    setup_two_accounts
+    ccm_run switch-account b
+    ccm_run current-account
+    assert_not_contains "clobber: 一致时无覆盖警告" "$OUT" "no longer match"
+    # 模拟旧会话 a 续期后把凭证写回磁盘（refresh token 变、grant 过期时间不变）
+    printf '{"claudeAiOauth":%s,"mcpOAuth":{"keep":"me"}}' \
+        "$(creds_json a2 "$((NOW_MS + 25 * DAY_MS))")" > "$TEST_HOME/.claude/.credentials.json"
+    ccm_run current-account
+    assert_contains "clobber: 凭证被旧会话覆盖后给出警告" "$OUT" "no longer match"
+    assert_contains "clobber: 提示重新切换到 b" "$OUT" "ccm switch-account b"
+    teardown
+}
+
+test_current_account_shows_rich_session_info() {
+    setup_two_accounts
+    cat > "$PS_FILE" <<'EOF'
+4242 claude claude --resume
+4243 claude.exe claude bg-pty-host --bg-pty-host /tmp/x.sock
+4244 claude.exe claude bg-spare --bg-spare /tmp/y.sock
+EOF
+    mkdir -p "$TEST_HOME/.claude/sessions" "$TEST_HOME/proj"
+    printf '{"pid":4242,"sessionId":"ef748761-f28a-4984-b42a-08ec536c03e9","cwd":"%s","startedAt":%s,"kind":"interactive","name":"salesglint-0e"}' \
+        "$TEST_HOME/proj" "$((NOW_MS - 3 * 3600 * 1000))" > "$TEST_HOME/.claude/sessions/4242.json"
+    # 4242 的父进程 4241 是 tmux 窗口 pw:7（窗口名 sales）的 pane 进程
+    PPID_FILE="$TEST_HOME/ppid.txt"
+    TMUX_FILE="$TEST_HOME/tmux.txt"
+    printf '4242 4241\n' > "$PPID_FILE"
+    printf 'pw|7|4241|sales\n' > "$TMUX_FILE"
+    ccm_run current-account
+    assert_rc "session: 退出码 0" 0
+    assert_contains "session: 显示会话名" "$OUT" "salesglint-0e"
+    assert_contains "session: 工作目录缩写为 ~" "$OUT" "~/proj"
+    assert_contains "session: 显示 tmux 窗口归属" "$OUT" "tmux:pw:7(sales)"
+    assert_contains "session: 显示 sessionId 短码" "$OUT" "ef748761"
+    assert_contains "session: 显示运行时长" "$OUT" " 3h "
+    assert_contains "session: 辅助进程聚合计数" "$OUT" "2 background helper"
+    teardown
+}
+
+test_current_account_exit_zero_without_helpers() {
+    setup_two_accounts
+    echo "4250 claude claude --resume" > "$PS_FILE"
+    mkdir -p "$TEST_HOME/.claude/sessions"
+    printf '{"pid":4250,"sessionId":"aaaaaaaa-1111","kind":"interactive","name":"solo"}' \
+        > "$TEST_HOME/.claude/sessions/4250.json"
+    ccm_run current-account
+    assert_rc "session: 无辅助进程时退出码仍为 0" 0
+    teardown
+}
+
+test_session_age_not_inherited_from_previous_row() {
+    setup_two_accounts
+    printf '4251 claude claude --resume\n4252 claude claude --resume\n' > "$PS_FILE"
+    mkdir -p "$TEST_HOME/.claude/sessions"
+    printf '{"pid":4251,"sessionId":"bbbb1111-1111","startedAt":%s,"name":"name-a"}' \
+        "$((NOW_MS - 3 * 3600 * 1000))" > "$TEST_HOME/.claude/sessions/4251.json"
+    printf '{"pid":4252,"sessionId":"bbbb2222-2222","name":"name-b"}' \
+        > "$TEST_HOME/.claude/sessions/4252.json"
+    ccm_run current-account
+    local row_a row_b
+    row_a=$(grep 'name-a' <<<"$OUT"); row_b=$(grep 'name-b' <<<"$OUT")
+    assert_contains "session: 前一行显示 3h" "$row_a" " 3h "
+    assert_not_contains "session: 后一行不继承 3h（startedAt 缺失时显示 -）" "$row_b" "3h"
+    assert_contains "session: 后一行时长占位符" "$row_b" " - "
+    teardown
+}
+
+test_switch_failure_does_not_print_running_warning() {
+    setup_two_accounts
+    echo "4242 claude claude --resume" > "$PS_FILE"
+    # 当前登录 z 未保存：切换会失败，此时不应先打印"会话将继续使用旧账号"的警告
+    login_as z1 "$((NOW_MS + 30 * DAY_MS))" uuid-z z@example.com
+    ccm_run switch-account b
+    assert_rc_nonzero "warn-order: 未保存登录时切换仍拒绝"
+    assert_not_contains "warn-order: 切换失败时不打印运行中会话警告" "$ERR" "will keep the current account"
+    teardown
+}
+
+test_non_numeric_started_at_does_not_error() {
+    setup_two_accounts
+    echo "4253 claude claude --resume" > "$PS_FILE"
+    mkdir -p "$TEST_HOME/.claude/sessions"
+    printf '{"pid":4253,"sessionId":"cccc3333-3333","startedAt":"not-a-number","name":"weird"}' \
+        > "$TEST_HOME/.claude/sessions/4253.json"
+    ccm_run current-account
+    assert_rc "session: 异常 startedAt 时退出码 0" 0
+    assert_not_contains "session: 非数值 startedAt 不产生 bash 报错" "$ERR" "integer expression expected"
     teardown
 }
 
@@ -207,11 +307,17 @@ fi
 test_resave_existing_account_updates_snapshot
 test_switch_writes_back_rotated_token
 test_switch_updates_oauth_account_in_claude_json
-test_switch_blocked_when_claude_running
-test_claude_account_shortcut_blocked_when_running
+test_switch_succeeds_when_claude_running
+test_claude_account_shortcut_succeeds_when_running
 test_switch_blocked_when_current_login_unsaved
 test_relogin_same_account_is_written_back
 test_legacy_snapshot_matched_by_grant
+test_current_account_warns_on_clobbered_creds
+test_current_account_shows_rich_session_info
+test_current_account_exit_zero_without_helpers
+test_session_age_not_inherited_from_previous_row
+test_switch_failure_does_not_print_running_warning
+test_non_numeric_started_at_does_not_error
 test_current_account_shows_details
 test_list_accounts_marks_active_after_rotation
 test_list_accounts_flags_expired_refresh

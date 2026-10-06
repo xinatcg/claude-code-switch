@@ -116,8 +116,10 @@
   "openrouter_provider_unknown": "未知 (模型:",
   "failed_to_save_account": "保存账号失败",
   "email": "邮箱",
-  "claude_running_cannot_switch": "仍有 Claude Code 在运行，此时切换会被它覆盖凭证",
-  "exit_claude_before_switch": "请退出所有 Claude Code 会话（含后台/daemon）后重试",
+  "claude_running_switch_warning": "以下 Claude Code 会话仍在运行：它们将继续使用当前账号，新启动的会话才会使用切换后的账号",
+  "bg_helper_processes": "个后台辅助进程（bg-pty-host / bg-spare）未逐条列出",
+  "creds_mismatch_warning": "磁盘凭证与上次切换的账号不再一致",
+  "creds_mismatch_hint": "可能是运行中的旧会话续期后覆盖了凭证（或手动登录过），恢复请执行",
   "current_login_not_saved": "当前登录不属于任何已保存账号，切换会丢失该登录",
   "save_current_first": "请先保存",
   "synced_back_credentials": "已把续期后的最新凭证写回快照",
@@ -134,6 +136,6 @@
   "saved_identities": "账号身份",
   "current_account_marker": "当前账号标记",
   "switch_allowed": "可以切换账号",
-  "switch_blocked": "需全部退出后才能切换账号",
+  "sessions_keep_old_account": "它们继续使用旧账号；新启动的会话使用切换后的账号",
   "install_jq_or_python": "请安装 jq 或 python3 以使用完整的账号管理功能"
 }

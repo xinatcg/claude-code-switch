@@ -236,11 +236,11 @@ ccm delete-account work
 切换时的保护机制：
 
 - **自动回写续期后的凭证**：Claude Code 每次续期都会轮换 refresh token，旧 token 随即作废。`switch-account` 切走前会把当前账号的最新凭证写回它的快照，切回来时不需要重新登录。
-- **有 Claude Code 在运行时拒绝切换**：运行中的进程续期时会把它持有的凭证写回磁盘，覆盖刚切换的账号。所以必须退出当前用户的所有 Claude Code 会话（包括后台 daemon）才能切换。
+- **有 Claude Code 在运行时也可切换**：不再强制退出会话。运行中的会话继续使用旧账号（凭证在启动时读取），新启动的会话使用切换后的账号。切换时会列出每个运行中会话的名称、工作目录、tmux 窗口和 session id，方便定位。注意：旧会话事后续期时会把它自己的凭证写回磁盘，`ccm current-account` 会检测到这种不一致并提示重新执行 `ccm switch-account <name>`。
 - **当前登录未保存时拒绝切换**：如果你手动 `/login` 了一个还没保存的账号，切换会让这次登录丢失，此时会提示先执行 `ccm save-account <name>`。
 - **同步登录身份**：切换时一并更新 `~/.claude.json` 里的 `oauthAccount`，让 Claude Code 显示正确的邮箱。
 
-`current-account` 会显示：access token 和 refresh token 的过期时间及剩余时长（refresh token 过期后必须重新登录）、各凭证文件的位置、当前运行的 Claude Code 进程。`list-accounts` 会显示每个账号的邮箱和 refresh token 剩余时长；已过期的标为 `EXPIRED`，不足 3 天的会给出提醒。
+`current-account` 会显示：access token 和 refresh token 的过期时间及剩余时长（refresh token 过期后必须重新登录）、各凭证文件的位置、当前运行的 Claude Code 会话（含名称、工作目录、tmux 窗口、运行时长和 session id，便于定位），以及磁盘凭证被旧会话覆盖时的警告。`list-accounts` 会显示每个账号的邮箱和 refresh token 剩余时长；已过期的标为 `EXPIRED`，不足 3 天的会给出提醒。
 
 相关文件：`~/.ccm_accounts`（凭证快照）、`~/.ccm_accounts_meta`（每个账号的登录身份）、`~/.ccm_current_account`（当前账号名）。
 

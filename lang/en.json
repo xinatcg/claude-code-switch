@@ -116,8 +116,10 @@
   "openrouter_provider_unknown": "Unknown (model:",
   "failed_to_save_account": "Failed to save account",
   "email": "Email",
-  "claude_running_cannot_switch": "Claude Code is still running; switching now would let it overwrite the new account's credentials",
-  "exit_claude_before_switch": "Exit all Claude Code sessions (including background/daemon) and retry",
+  "claude_running_switch_warning": "Claude Code sessions below are still running; they will keep the current account — only newly started sessions will use the switched account",
+  "bg_helper_processes": "background helper processes (bg-pty-host / bg-spare) not listed",
+  "creds_mismatch_warning": "On-disk credentials no longer match the last switched account",
+  "creds_mismatch_hint": "A running old session may have renewed and overwritten them (or you logged in manually); to restore run",
   "current_login_not_saved": "Current login does not match any saved account; switching would lose it",
   "save_current_first": "Save it first",
   "synced_back_credentials": "Synced latest (refreshed) credentials back to snapshot",
@@ -134,6 +136,6 @@
   "saved_identities": "Saved identities",
   "current_account_marker": "Current account marker",
   "switch_allowed": "account switching allowed",
-  "switch_blocked": "account switching blocked until they exit",
+  "sessions_keep_old_account": "they keep the old account; newly started sessions use the switched one",
   "install_jq_or_python": "Install jq or python3 for full account management"
 }
